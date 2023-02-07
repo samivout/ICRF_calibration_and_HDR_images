@@ -1,0 +1,147 @@
+import read_data as rd
+import numpy as np
+import os
+
+current_directory = os.path.dirname(__file__)
+data_directory = os.path.join(os.path.dirname(current_directory), 'data')
+dorf_file = rd.read_config_single('source DoRF data')
+dorf_datapoints = rd.read_config_single('original DoRF datapoints')
+final_datapoints = rd.read_config_single('final datapoints')
+ICRF_files = rd.read_config_list('ICRFs')
+mean_ICRF_files = rd.read_config_list('mean ICRFs')
+
+
+def _read_dorf_data(file_name):
+    """ Load numerical data from a .txt file of the given name from the data
+    directory. The dorfCurves.txt contains measured irradiance vs. digital
+    number data for various cameras. In this function all the data is read in
+    and split into separate Numpy float arrays for each color channel.
+
+        Args:
+            file_name: the name of the .txt file containing the dorf data.
+
+        Return:
+            list of numpy float arrays, one for each color channel.
+    """
+    file = os.path.join(data_directory, file_name)
+    red_curves = np.zeros((1, dorf_datapoints), dtype=float)
+    blue_curves = np.zeros((1, dorf_datapoints), dtype=float)
+    green_curves = np.zeros((1, dorf_datapoints), dtype=float)
+    number_of_lines = 0
+    c = 0
+    with open(file) as f:
+        for line in f:
+            number_of_lines += 1
+            # Every sixth line in the file contains the actual data of interest.
+            if number_of_lines % 6 == 0:
+
+                line_to_arr = np.fromstring(line, dtype=float, sep=' ')
+
+                # Stack each read line to an array based on the color channel,
+                # the color channels follow a cycle of red, green, blue in the
+                # source .txt file.
+                if c == 0:
+                    red_curves = np.vstack([red_curves, line_to_arr])
+                if c == 1:
+                    green_curves = np.vstack([green_curves, line_to_arr])
+                if c == 2:
+                    blue_curves = np.vstack([blue_curves, line_to_arr])
+
+                c += 1
+                if c == 3:
+                    c = 0
+    f.close()
+
+    # Remove the initial row of zeros from the arrays.
+    red_curves = np.delete(red_curves, 0, 0)
+    green_curves = np.delete(green_curves, 0, 0)
+    blue_curves = np.delete(blue_curves, 0, 0)
+
+    list_of_curves = [red_curves, green_curves, blue_curves]
+
+    return list_of_curves
+
+
+def _invert_data(list_of_curves, new_datapoints):
+    """ Invert the camera response functions obtained from the dorfCurves.txt
+    file. Numpy interpolation is used to obtain the same digital value
+    datapoints for all curves, as originally the evenly spaced datapoints were
+    in the irradiance domain.
+
+            Args:
+                list_of_curves: list containing all the CRFs, separated based
+                on color channel, in Numpy float arrays. Original data is spaced
+                into 1024 points evenly from 0 to 1.
+                new_datapoints: number of datapoints to be used in the digital
+                value range.
+
+            Return:
+                list of numpy float arrays, one for each color channel,
+                containing the inverted camera response functions, or ICRFs.
+    """
+    x_old = np.linspace(0, 1, dorf_datapoints)
+    x_new = np.linspace(0, 1, new_datapoints)
+
+    for index, arr in enumerate(list_of_curves):
+        rows = arr.shape[0]
+
+        for i in range(rows):
+            y = arr[i]
+            arr[i] = np.interp(x_old, y, x_new)
+
+        list_of_curves[index] = arr
+
+    return list_of_curves
+
+
+def _calculate_mean_curve(list_of_curves):
+    """ Calculate the mean function from a collection of CRFs or ICRFs
+
+            Args:
+                list_of_curves: list containing the Numpy float arrays of the
+                CRFs or ICRFs from which a mean function will be calculated for
+                each channel.
+            Return:
+                list containing the Numpy float arrays for the mean CRFs or
+                ICRFs for each color channel.
+
+    """
+
+    for index, curves in enumerate(list_of_curves):
+
+        list_of_curves[index] = np.mean(curves, axis=0)
+
+    return list_of_curves
+
+
+def process_CRF_data():
+    """ Main function to be called outside the module, used to run the process
+    of obtaining the CRFs from dorfCurves.txt, invert them and determine a mean
+    ICRF, for each color channel separately.
+    """
+    list_of_curves = _read_dorf_data(dorf_file)
+    list_of_curves = _invert_data(list_of_curves, final_datapoints)
+    list_of_mean_curves = list_of_curves.copy()
+    list_of_mean_curves = _calculate_mean_curve(list_of_mean_curves)
+
+    for i in range(len(ICRF_files)):
+
+        np.savetxt(os.path.join(data_directory, ICRF_files[i]),
+                   list_of_curves[i])
+        np.savetxt(os.path.join(data_directory, mean_ICRF_files[i]),
+                   list_of_mean_curves[i])
+
+    return
+
+
+if __name__ == "__main__":
+    test_curves = _read_dorf_data(dorf_file)
+    test_curves = _invert_data(test_curves, final_datapoints)
+    test_mean_curves = test_curves.copy()
+    test_mean_curves = _calculate_mean_curve(test_mean_curves)
+
+    for i in range(len(ICRF_files)):
+        np.savetxt(os.path.join(data_directory, ICRF_files[i]),
+                   test_curves[i])
+        np.savetxt(os.path.join(data_directory, mean_ICRF_files[i]),
+                   test_mean_curves[i])
