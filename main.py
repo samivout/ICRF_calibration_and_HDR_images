@@ -19,21 +19,37 @@ inGuess = rd.read_config_list('initial guess')
 
 
 def process_CRFs():
+    """
+    Run the scripts that gather data from dorfCurves.txt and save the data into
+    the ICRF and ICRF_mean files for each channel.
 
+    :return:
+    """
     process_CRF_database.process_CRF_data()
 
     return
 
 
 def process_PCA():
+    """
+    Run the scripts that utilize the ICRF data to calculate the principal
+    components that are utilized for the ICRF calibration algorithm.
 
+    :return:
+    """
     principal_component_analysis.analyze_principal_components()
 
     return
 
 
 def calibrate_ICRF():
+    """
+    Run the ICRF calibration algorithm for all the given evaluation heights in
+    the config.ini file. Initial and final energies, the optimized ICRFs and
+    their plots are saved for each evaluation height for all camera channels.
 
+    :return:
+    """
     for index, height in enumerate(evaluation_heights):
         ICRF_array, initial_energy_array, final_energy_array = \
             ICRF.calibration(inGuess, height, lower_limit, upper_limit)
