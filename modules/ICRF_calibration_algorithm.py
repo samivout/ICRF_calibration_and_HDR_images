@@ -63,7 +63,6 @@ def _datapoint_distances(mean_data, number_of_heights):
         # Calculate the d+ distances for the given heights.
         h = 0
         h_c = number_of_heights
-        m = mode
         while h < h_c:
             m = mode
             while dist[m] > 0:
@@ -88,7 +87,6 @@ def _datapoint_distances(mean_data, number_of_heights):
 
         # Calculate the d- distances for the given heights.
         h = 0
-        m = mode
         while h < h_c:
             m = mode
             while dist[m] > 0:
@@ -132,9 +130,6 @@ def _skewness_evaluation(d, evaluation_heights, iterated_ICRF):
     """
     dIrr = np.zeros(np.shape(d), dtype=float)
     boolMask = np.ones(evaluation_heights, dtype=bool)
-    mode = np.zeros(evaluation_heights, dtype=float)
-    dp = np.zeros(evaluation_heights, dtype=float)
-    dn = np.zeros(evaluation_heights, dtype=float)
 
     for j in range(0, evaluation_heights):
 
@@ -235,11 +230,6 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
     mean_ICRF_array = np.zeros((datapoints, channels), dtype=float)
     final_energy_array = np.zeros(channels, dtype=float)
     initial_energy_array = np.zeros(channels, dtype=float)
-    '''
-    mean_ICRF_array[:,0] = np.linspace(0,1, 1024)
-    mean_ICRF_array[:,1] = np.linspace(0,1, 1024)
-    mean_ICRF_array[:,2] = np.linspace(0,1, 1024)
-    '''
 
     limits = [[lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit], [lower_limit, upper_limit],
@@ -281,10 +271,6 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
 
         ICRF_array[:, i] = ICRF
 
-    # print(ICRF_array[0,0]- ICRF_array[-1,0])
-    # print(ICRF_array[0,1]- ICRF_array[-1,1])
-    # print(ICRF_array[0,2]- ICRF_array[-1,2])
-
     ICRF_array[:, 0] += 1 - ICRF_array[-1, 0]
     ICRF_array[:, 1] += 1 - ICRF_array[-1, 1]
     ICRF_array[:, 2] += 1 - ICRF_array[-1, 2]
@@ -292,15 +278,7 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
     ICRF_array[0, 0] = 0
     ICRF_array[0, 1] = 0
     ICRF_array[0, 2] = 0
-    '''
-    np.savetxt('ICRFs.txt', ICRF_array)
 
-    x_range = np.linspace(0, 1, 256*4)
-    plt.plot(x_range, ICRF_array[:,0], color='b')
-    plt.plot(x_range, ICRF_array[:,1], color='g')
-    plt.plot(x_range, ICRF_array[:,2], color='r')
-    plt.show()
-    '''
     return ICRF_array, initial_energy_array, final_energy_array
 
 

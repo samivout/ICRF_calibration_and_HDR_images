@@ -15,7 +15,7 @@ number_of_heights = len(evaluation_heights)
 energy_array = np.zeros((number_of_heights, channels*2), dtype=float)
 lower_limit = rd.read_config_single('lower PC coefficient limit')
 upper_limit = rd.read_config_single('upper PC coefficient limit')
-inGuess = rd.read_config_list('initial guess')
+in_guess = rd.read_config_list('initial guess')
 
 
 def process_CRFs():
@@ -52,7 +52,7 @@ def calibrate_ICRF():
     """
     for index, height in enumerate(evaluation_heights):
         ICRF_array, initial_energy_array, final_energy_array = \
-            ICRF.calibration(inGuess, height, lower_limit, upper_limit)
+            ICRF.calibration(in_guess, height, lower_limit, upper_limit)
 
         energy_array[index, :channels] = initial_energy_array
         energy_array[index, channels:] = final_energy_array

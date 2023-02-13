@@ -116,65 +116,67 @@ def multiply_per_channel(flat_field_mean_list, image):
 
 
 def uncertainty(acqList, darkList, flatList):
-    u_acq_term = np.zeros((im_size_x, im_size_y), dtype=float)
-    u_ff_term = np.zeros((im_size_x, im_size_y), dtype=float)
-    u_ffm_term = np.zeros((im_size_x, im_size_y), dtype=float)
-    u_d_term = np.zeros((im_size_x, im_size_y), dtype=float)
+    """
+    Calculates the uncertainty associated with an acquired image and the
+    applied corrections.
+
+    :param acqList: List containing the ImageSet objects of all the main images
+    of interest subject to correction.
+
+    :param darkList: List containing the ImageSet objects of dark frames used in
+    dark frame correction.
+
+    :param flatList: List containing the ImageSet objects of flat frames used in
+    fixed pattern correction.
+
+    :return: List containing the ImageSet objects of the main images of interest
+    with an .std property containing the uncertainty image.
+    """
 
     for acqSet in acqList:
-        if not (acqSet.std is None):
-            for flatSet in flatList:
-                if acqSet.mag == flatSet.mag:
-                    if not (flatSet.std is None):
-                        for darkSet in darkList:
-                            if acqSet.exp == darkSet.exp:
-                                if not (darkSet.std is None):
-                                    acq = acqSet.acq
-                                    ff = flatSet.acq
-                                    d = darkSet.acq
-                                    u_acq = acqSet.std
-                                    u_ff = flatSet.std
-                                    u_d = darkSet.std
-                                    r, g, b = flat_field_mean(flatSet, 0)
-                                    ur, ug, ub = flat_field_mean(flatSet, 1)
+        try:
+            flatSet = next(flatSet for flatSet in flatList if
+                           acqSet.mag == flatSet.mag)
+            darkSet = next(darkSet for darkSet in darkList if
+                           acqSet.exp == darkSet.exp)
 
-                                    u_acq_term = cv.divide(u_acq ** 2, ff ** 4)
-                                    u_acq_term = multiply_per_channel(r ** 2,
-                                                                      g ** 2,
-                                                                      b ** 2,
-                                                                      u_acq_term)
+            acq = acqSet.acq
+            ff = flatSet.acq
+            d = darkSet.acq
+            u_acq = acqSet.std
+            u_ff = flatSet.std
+            u_d = darkSet.std
+            r, g, b = flat_field_mean(flatSet, 0)
+            ur, ug, ub = flat_field_mean(flatSet, 1)
 
-                                    u_d_term = cv.divide(u_d ** 2, ff ** 4)
-                                    u_d_term = multiply_per_channel(r ** 2,
-                                                                    g ** 2,
-                                                                    b ** 2,
-                                                                    u_d_term)
+            u_acq_term = cv.divide(u_acq ** 2, ff ** 4)
+            u_acq_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+                                              u_acq_term)
 
-                                    u_ff_term = cv.divide((acq - d) ** 2,
-                                                          ff ** 4)
-                                    u_ff_term = cv.multiply(u_ff_term,
-                                                            u_ff ** 2)
-                                    u_ff_term = multiply_per_channel(r ** 2,
-                                                                     g ** 2,
-                                                                     b ** 2,
-                                                                     u_ff_term)
+            u_d_term = cv.divide(u_d ** 2, ff ** 4)
+            u_d_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+                                            u_d_term)
 
-                                    u_ffm_term = cv.divide((acq - d) ** 2,
-                                                           ff ** 2)
-                                    u_ffm_term = multiply_per_channel(ur ** 2,
-                                                                      ug ** 2,
-                                                                      ub ** 2,
-                                                                      u_ffm_term)
+            u_ff_term = cv.divide((acq - d) ** 2, ff ** 4)
+            u_ff_term = cv.multiply(u_ff_term, u_ff ** 2)
+            u_ff_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+                                             u_ff_term)
 
-                                    acqSet.std = np.clip(
-                                        u_acq_term + u_d_term + u_ff_term + u_ffm_term,
-                                        0, 1)
-                                    acqSet.std = cv.normalize(acqSet.std, None,
-                                                              0, 255,
-                                                              cv.NORM_MINMAX,
-                                                              cv.CV_8U)
+            u_ffm_term = cv.divide((acq - d) ** 2, ff ** 2)
+            u_ffm_term = multiply_per_channel([ur ** 2, ug ** 2, ub ** 2],
+                                              u_ffm_term)
 
-    return acqList
+            acqSet.std = np.clip(u_acq_term + u_d_term + u_ff_term + u_ffm_term,
+                                 0, 1)
+
+            acqSet.std = cv.normalize(acqSet.std, None, 0, 255,
+                                      cv.NORM_MINMAX,
+                                      cv.CV_8U)
+
+        except StopIteration:
+            return acqList
+
+        return acqList
 
 
 def main():
