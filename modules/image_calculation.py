@@ -48,6 +48,7 @@ def fixed_pattern_correction(imageSet_list, ImageSet_flat_list):
 
             if imageSet.mag == flatSet.mag:
                 if imageSet.ill == flatSet.ill:
+
                     imageSet.acq = cv.divide(imageSet.acq, flatField.acq)
 
                     # Determine flat field means
@@ -83,16 +84,15 @@ def flat_field_mean(imageSet_flat, flag):
         flat_field = imageSet_flat.std
 
     # Define ROI for calculating flat field spatial mean
-    rows, columns, channels = flat_field.shape
-    ROI_dx = math.floor(rows * 0.0666)
-    ROI_dy = math.floor(columns * 0.0666)
+    ROI_dx = math.floor(im_size_x * 0.047)
+    ROI_dy = math.floor(im_size_y * 0.047)
 
     red_mean = np.mean(
-        flat_field[7 * ROI_dx:8 * ROI_dx, 7 * ROI_dy:8 * ROI_dy, 2])
+        flat_field[10 * ROI_dx:11 * ROI_dx, 10 * ROI_dy:11 * ROI_dy, 2])
     green_mean = np.mean(
-        flat_field[7 * ROI_dx:8 * ROI_dx, 7 * ROI_dy:8 * ROI_dy, 1])
+        flat_field[10 * ROI_dx:11 * ROI_dx, 10 * ROI_dy:11 * ROI_dy, 1])
     blue_mean = np.mean(
-        flat_field[7 * ROI_dx:8 * ROI_dx, 7 * ROI_dy:8 * ROI_dy, 0])
+        flat_field[10 * ROI_dx:11 * ROI_dx, 10 * ROI_dy:11 * ROI_dy, 0])
 
     return [blue_mean, green_mean, red_mean]
 
@@ -179,7 +179,7 @@ def uncertainty(acqList, darkList, flatList):
         return acqList
 
 
-def main():
+def image_correction():
     # Initialize image lists and name lists
     acq_list = IS.load_images(acq_path)
     dark_list = IS.load_images(dark_path)
@@ -198,7 +198,7 @@ def main():
 
     del ideal_acq_list
 
-    acq_list = uncertainty(acq_list, dark_list, flat_list)
+    # acq_list = uncertainty(acq_list, dark_list, flat_list)
 
     for imageset in acq_list:
         if not (imageset.std is None):
@@ -206,4 +206,7 @@ def main():
                 '.tif') + ' STD.tif'), imageset.std)
 
 
-main()
+if __name__ == "__main__":
+
+    print('Run script from actual main file!')
+

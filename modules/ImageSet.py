@@ -2,14 +2,19 @@ import read_data as rd
 import numpy as np
 import cv2 as cv
 import os
+import re
 
 bit_depth = rd.read_config_single('bit depth')
 max_DN = 2**bit_depth
 
 '''
-Image naming convention: -Exposure time- -Relevant descriptors- -Magnification-
--STD-. Exposure time in ms, dark frames should have Dark in their descriptors,
-BF and DF modes can be noted, magnification in 50x for example.
+In an arbitrary order the name should contain (exposure time)ms, (illumination
+type as bf or df) and (magnification)x and (your image name). Each descriptor
+should be separated by a space and within a descriptor there should be no white
+space. For example: '5ms BF sample_1 50x.tif'. Additionally if the image is an
+uncertainty image, it should contain a separate 'STD' descriptor in it. Only
+.tif support for now. Flat field images should have a name 'flat' in them
+and dark frames should have 'dark' in them.
 '''
 
 im_size_x = rd.read_config_single('image size x')
@@ -96,9 +101,9 @@ def load_images(path):
     files = os.listdir(path)
     for file in files:
         if file.endswith(".tif"):
-            if not ("STD" in file):
+            file_name_array = file.removesuffix('.tif').split()
+            if not ("STD" in file_name_array):
 
-                file_name_array = file.removesuffix('.tif').split()
                 acq = cv.imread(os.path.join(path, file)).astype(
                     np.float32) / max_DN
                 try:
@@ -111,9 +116,17 @@ def load_images(path):
                     std = None
 
                 print(file_name_array)
-                exp = file_name_array[0]
-                ill = file_name_array[1]
-                mag = file_name_array[-1]
+                exp = None
+                ill = None
+                mag = None
+                for element in file_name_array:
+                    if element.casefold() == 'bf' or element.casefold() == 'df':
+                        ill = element
+                    if re.match("^[0-9]+.*[xX]$", element):
+                        mag = element
+                    if re.match("^[0-9]+.*ms$", element):
+                        exp = element
+
                 imageSet = _make_ImageSet(acq, std, file, exp, mag, ill)
                 list_of_ImageSets.append(imageSet)
 
