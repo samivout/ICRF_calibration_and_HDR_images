@@ -2,6 +2,7 @@ from modules import ICRF_calibration_algorithm as ICRF
 from modules import principal_component_analysis
 from modules import process_CRF_database
 from modules import read_data as rd
+from modules import image_calculation
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -76,7 +77,8 @@ def main():
 
     # process_CRFs()
     # process_PCA()
-    calibrate_ICRF()
+    # calibrate_ICRF()
+    image_calculation.image_correction()
 
 
 main()
