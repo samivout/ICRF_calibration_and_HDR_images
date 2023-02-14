@@ -4,6 +4,7 @@ import cv2 as cv
 import os
 
 bit_depth = rd.read_config_single('bit depth')
+max_DN = 2**bit_depth
 
 '''
 Image naming convention: -Exposure time- -Relevant descriptors- -Magnification-
@@ -99,12 +100,14 @@ def load_images(path):
 
                 file_name_array = file.removesuffix('.tif').split()
                 acq = cv.imread(os.path.join(path, file)).astype(
-                    np.float32) / bit_depth
+                    np.float32) / max_DN
                 try:
                     std = cv.imread(os.path.join(path, file.removesuffix(
-                        '.tif') + ' STD.tif')).astype(np.float32) / bit_depth
+                        '.tif') + ' STD.tif')).astype(np.float32) / max_DN
 
                 except FileNotFoundError:
+                    std = None
+                except AttributeError:
                     std = None
 
                 print(file_name_array)
