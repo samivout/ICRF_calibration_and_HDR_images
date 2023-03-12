@@ -59,11 +59,11 @@ def fixed_pattern_correction(imageSet_list, ImageSet_flat_list):
                     imageSet.acq = np.clip(
                         multiply_per_channel(flat_field_mean_list,
                                              imageSet.acq), 0, 1)
-
+    '''
                     # Normalize image to 8-bit range for RGB saving
                     imageSet.acq = cv.normalize(imageSet.acq, None, 0, 255,
                                                 cv.NORM_MINMAX, cv.CV_8U)
-
+    '''
     return imageSet_list
 
 
@@ -194,7 +194,7 @@ def image_correction():
 
     # Save the corrected images
     for imageset in ideal_acq_list:
-        cv.imwrite(os.path.join(out_path, imageset.name), imageset.acq)
+        cv.imwrite(os.path.join(out_path, imageset.file_name), imageset.acq)
 
     del ideal_acq_list
 
@@ -202,7 +202,7 @@ def image_correction():
 
     for imageset in acq_list:
         if not (imageset.std is None):
-            cv.imwrite(os.path.join(out_path, imageset.name.removesuffix(
+            cv.imwrite(os.path.join(out_path, imageset.file_name.removesuffix(
                 '.tif') + ' STD.tif'), imageset.std)
 
 

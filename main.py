@@ -3,6 +3,8 @@ from modules import principal_component_analysis
 from modules import process_CRF_database
 from modules import read_data as rd
 from modules import image_calculation
+from modules import HDR_image as HDR
+from modules import STD_data_calculator as STD
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -51,6 +53,7 @@ def calibrate_ICRF():
 
     :return:
     """
+    x_range = np.linspace(0, 1, datapoints)
     for index, height in enumerate(evaluation_heights):
         ICRF_array, initial_energy_array, final_energy_array = \
             ICRF.calibration(in_guess, height, lower_limit, upper_limit)
@@ -61,7 +64,6 @@ def calibrate_ICRF():
         np.savetxt(os.path.join(output_directory,
                                 f'ICRFs{height}.txt'), ICRF_array)
 
-        x_range = np.linspace(0, 1, datapoints)
         plt.plot(x_range, ICRF_array[:, 0], color='b')
         plt.plot(x_range, ICRF_array[:, 1], color='g')
         plt.plot(x_range, ICRF_array[:, 2], color='r')
@@ -73,12 +75,28 @@ def calibrate_ICRF():
     return
 
 
+def process_HDR():
+
+    HDR.process_HDR_images()
+
+    return
+
+
+def process_STD():
+
+    STD.process_STD_data()
+
+    return
+
+
 def main():
 
+    # process_STD()
     # process_CRFs()
     # process_PCA()
-    # calibrate_ICRF()
-    image_calculation.image_correction()
+    calibrate_ICRF()
+    # image_calculation.image_correction()
+    # process_HDR()
 
 
 main()
