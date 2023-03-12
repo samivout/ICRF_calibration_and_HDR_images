@@ -1,8 +1,12 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import math
 import read_data as rd
 from scipy.optimize import differential_evolution
+import os
 
+current_directory = os.path.dirname(__file__)
+output_directory = os.path.join(current_directory, 'output')
 datapoints = rd.read_config_single('final datapoints')
 channels = rd.read_config_single('channels')
 bit_depth = rd.read_config_single('bit depth')
@@ -204,6 +208,28 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
     return energy
 
 
+def plot_noise_profiles(mean_data_array):
+
+    number_of_profiles = 16
+    row_step = int(max_DN/number_of_profiles)
+    row_indices = np.arange(0, max_DN, row_step, dtype=int)
+    sampled_mean_data = mean_data_array[::row_step, :, :]
+    x_range = np.linspace(0, 1, datapoints)
+
+    for c in range(channels):
+        for i in row_indices:
+
+            normalized_row = sampled_mean_data[i, :, c] / \
+                             np.amax(sampled_mean_data[i, :, c])
+
+            plt.plot(x_range, normalized_row)
+
+        plt.savefig(os.path.join(output_directory, f'Profiles{c}.png'))
+        plt.clf()
+
+    return
+
+
 def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
     """ The main function running the ICRF calibration process that is called
     from outside the module.
@@ -234,7 +260,11 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
     limits = [[lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit]]
-
+    '''
+    mean_ICRF_array[:, 0] = np.linspace(0, 1, 1024)
+    mean_ICRF_array[:, 1] = np.linspace(0, 1, 1024)
+    mean_ICRF_array[:, 2] = np.linspace(0, 1, 1024)
+    '''
     for i in range(len(mean_data_files)):
         # Get the filenames from the attribute arrays.
         mean_file_name = mean_data_files[i]
@@ -278,6 +308,8 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
     ICRF_array[0, 0] = 0
     ICRF_array[0, 1] = 0
     ICRF_array[0, 2] = 0
+
+    plot_noise_profiles(mean_data_array)
 
     return ICRF_array, initial_energy_array, final_energy_array
 

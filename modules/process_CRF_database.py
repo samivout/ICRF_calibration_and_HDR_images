@@ -28,28 +28,40 @@ def _read_dorf_data(file_name):
     blue_curves = np.zeros((1, dorf_datapoints), dtype=float)
     green_curves = np.zeros((1, dorf_datapoints), dtype=float)
     number_of_lines = 0
-    c = 0
+    is_red = False
+    is_green = False
+    is_blue = False
     with open(file) as f:
         for line in f:
+            text = line.rstrip().casefold()
             number_of_lines += 1
-            # Every sixth line in the file contains the actual data of interest.
+            if (number_of_lines + 5) % 6 == 0:
+                if text.endswith('red') or text[-1] == 'r' or text[-2] == 'r':
+                    is_red = True
+                    continue
+                elif text.endswith('green') or text[-1] == 'g' or text[-2] == 'g':
+                    is_green = True
+                    continue
+                elif text.endswith('blue') or text[-1] == 'b' or text[-2] == 'b':
+                    is_blue = True
+                    continue
+                else:
+                    is_red = True
+                    is_green = True
+                    is_blue = True
+
             if number_of_lines % 6 == 0:
-
-                line_to_arr = np.fromstring(line, dtype=float, sep=' ')
-
-                # Stack each read line to an array based on the color channel,
-                # the color channels follow a cycle of red, green, blue in the
-                # source .txt file.
-                if c == 0:
+                line_to_arr = np.fromstring(text, dtype=float, sep=' ')
+                if is_red:
                     red_curves = np.vstack([red_curves, line_to_arr])
-                if c == 1:
+                    is_red = False
+                if is_green:
                     green_curves = np.vstack([green_curves, line_to_arr])
-                if c == 2:
+                    is_green = False
+                if is_blue:
                     blue_curves = np.vstack([blue_curves, line_to_arr])
+                    is_blue = False
 
-                c += 1
-                if c == 3:
-                    c = 0
     f.close()
 
     # Remove the initial row of zeros from the arrays.
