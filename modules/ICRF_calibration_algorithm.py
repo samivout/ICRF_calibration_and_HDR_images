@@ -260,11 +260,7 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
     limits = [[lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit]]
-    '''
-    mean_ICRF_array[:, 0] = np.linspace(0, 1, 1024)
-    mean_ICRF_array[:, 1] = np.linspace(0, 1, 1024)
-    mean_ICRF_array[:, 2] = np.linspace(0, 1, 1024)
-    '''
+
     for i in range(len(mean_data_files)):
         # Get the filenames from the attribute arrays.
         mean_file_name = mean_data_files[i]
