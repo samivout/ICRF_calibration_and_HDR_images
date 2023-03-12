@@ -308,7 +308,7 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
     plot_noise_profiles(mean_data_array)
 
     '''
-    Minor worked only through the default bump.
+    This is getting troublesome.
     '''
 
     return ICRF_array, initial_energy_array, final_energy_array
