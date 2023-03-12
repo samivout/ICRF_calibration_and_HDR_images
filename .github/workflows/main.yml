@@ -1,5 +1,4 @@
 name: Bump version
-permissions: read-all|write-all
 on:
   pull_request:
     types:
