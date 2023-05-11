@@ -5,6 +5,8 @@ from modules import read_data as rd
 from modules import image_calculation
 from modules import HDR_image as HDR
 from modules import STD_data_calculator as STD
+from modules import mean_data_plot as mdl
+from modules import camera_data_tools as cdt
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,6 +21,10 @@ energy_array = np.zeros((number_of_heights, channels*2), dtype=float)
 lower_limit = rd.read_config_single('lower PC coefficient limit')
 upper_limit = rd.read_config_single('upper PC coefficient limit')
 in_guess = rd.read_config_list('initial guess')
+bit_depth = rd.read_config_single('bit depth')
+bits = 2**bit_depth
+max_DN = bits-1
+min_DN = 0
 
 
 def process_CRFs():
@@ -53,7 +59,7 @@ def calibrate_ICRF():
 
     :return:
     """
-    x_range = np.linspace(0, 1, datapoints)
+    x_range = np.linspace(0, 1, bits)
     for index, height in enumerate(evaluation_heights):
         ICRF_array, initial_energy_array, final_energy_array = \
             ICRF.calibration(in_guess, height, lower_limit, upper_limit)
@@ -64,10 +70,10 @@ def calibrate_ICRF():
         np.savetxt(os.path.join(output_directory,
                                 f'ICRFs{height}.txt'), ICRF_array)
 
-        plt.plot(x_range, ICRF_array[:, 0], color='b')
+        plt.plot(x_range, ICRF_array[:, 0], color='r')
         plt.plot(x_range, ICRF_array[:, 1], color='g')
-        plt.plot(x_range, ICRF_array[:, 2], color='r')
-        plt.savefig(os.path.join(output_directory, f'ICRFs{height}.png'))
+        plt.plot(x_range, ICRF_array[:, 2], color='b')
+        plt.savefig(os.path.join(output_directory, f'ICRFs{height}.png'), dpi=300)
         plt.clf()
 
     np.savetxt(os.path.join(output_directory, 'EnergyArray.txt'), energy_array)
@@ -77,7 +83,11 @@ def calibrate_ICRF():
 
 def process_HDR():
 
-    HDR.process_HDR_images()
+    save_8bit = False
+    save_32bit = True
+    save_linear = False
+    save_HDR = True
+    HDR.process_HDR_images(save_linear, save_HDR, save_8bit, save_32bit)
 
     return
 
@@ -89,14 +99,32 @@ def process_STD():
     return
 
 
+def process_mdl():
+
+    mdl.mean_data_plot()
+
+    return
+
+
+def process_cdt():
+
+    cdt.clean_and_interpolate_data()
+
+    return
+
+
 def main():
 
+    # process_cdt()
     # process_STD()
     # process_CRFs()
     # process_PCA()
-    calibrate_ICRF()
+    # calibrate_ICRF()
+    # process_mdl()
     # image_calculation.image_correction()
-    # process_HDR()
+    process_HDR()
+    # image_calculation.calibrate_dark_frames()
+    # image_calculation.calibrate_flats()
 
 
 main()

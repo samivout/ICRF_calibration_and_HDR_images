@@ -1,13 +1,18 @@
+import math
+
 import read_data as rd
 import numpy as np
 import cv2 as cv
 import os
 import re
+from typing import Optional
 
 bit_depth = rd.read_config_single('bit depth')
 max_DN = 2**bit_depth-1
 STD_arr = rd.read_data_from_txt(rd.read_config_single('STD data'))
 channels = rd.read_config_single('channels')
+im_size_x = rd.read_config_single('image size x')
+im_size_y = rd.read_config_single('image size y')
 
 '''
 In an arbitrary order the name should contain (exposure time)ms, (illumination
@@ -19,16 +24,10 @@ uncertainty image, it should contain a separate 'STD' descriptor in it. Only
 and dark frames should have 'dark' in them.
 '''
 
-im_size_x = rd.read_config_single('image size x')
-im_size_y = rd.read_config_single('image size y')
-
 
 class ImageSet(object):
-    acq = np.zeros((im_size_x, im_size_y, channels), dtype=float)
-    std = np.zeros((im_size_x, im_size_y, channels), dtype=float)
-    file_name = ""
 
-    def __init__(self, acq, std, file_name, exp, mag, ill, name):
+    def __init__(self, acq: Optional, std: Optional, file_name, exp, mag, ill, name, path):
         self.acq = acq
         self.std = std
         self.file_name = file_name
@@ -36,72 +35,33 @@ class ImageSet(object):
         self.mag = mag
         self.ill = ill
         self.name = name
+        self.path = path
 
-    @property
-    def setAcq(self):
-        return self.acq
+        if acq is None:
+            self.acq = None
 
-    @property
-    def setStd(self):
-        return self.std
+        if std is None:
+            self.std = None
 
-    @property
-    def setFile_name(self):
-        return self.file_name
+    def load_acq(self):
 
-    @property
-    def setExp(self):
-        return self.exp
+        self.acq = cv.imread(os.path.join(self.path, self.file_name)).astype(np.float32) / max_DN
 
-    @property
-    def setMag(self):
-        return self.mag
+    def load_std(self):
 
-    @property
-    def setIll(self):
-        return self.ill
-
-    @property
-    def setName(self):
-        return self.name
-
-    @setAcq.setter
-    def setAcq(self, image):
-        self.acq = image
-
-    @setStd.setter
-    def setStd(self, image):
-        self.std = image
-
-    @setFile_name.setter
-    def setFile_name(self, file_name):
-        self.file_name = file_name
-
-    @setExp.setter
-    def setExp(self, exp):
-        self.exp = exp
-
-    @setMag.setter
-    def setMag(self, mag):
-        self.mag = mag
-
-    @setIll.setter
-    def setIll(self, ill):
-        self.ill = ill
-
-    @setName.setter
-    def setName(self, name):
-        self.name = name
+        try:
+            self.std = cv.imread(os.path.join(self.path, self.file_name.removesuffix(
+                '.tif') + ' STD.tif')).astype(np.float32) / (max_DN * math.sqrt(67))
+        except FileNotFoundError:
+            self.std = calculate_numerical_STD((self.acq * max_DN).astype(int))
+        except AttributeError:
+            self.std = calculate_numerical_STD((self.acq * max_DN).astype(int))
 
 
-def make_ImageSet(acq, std, file_name, exp, mag, ill, name):
-    imageSet = ImageSet(acq, std, file_name, exp, mag, ill, name)
-    return imageSet
-
-
-def load_images(path):
+def create_imageSets(path):
     """
-    Load all images of a given path into a list of ImageSet objects.
+    Load all images of a given path into a list of ImageSet objects but without
+    acq or std images.
 
     :param path: Absolute path to the directory of images
 
@@ -115,21 +75,9 @@ def load_images(path):
             file_name_array = file.removesuffix('.tif').split()
             if not ("STD" in file_name_array):
 
-                acq = cv.imread(os.path.join(path, file))
-                try:
-                    # print(os.path.isfile(os.path.join(path, file.removesuffix(
-                    #    '.tif') + ' STD.tif')))
-                    std = cv.imread(os.path.join(path, file.removesuffix(
-                        '.tif') + ' STD.tif')).astype(np.float32) / max_DN
-
-                except FileNotFoundError:
-                    std = calculate_numerical_STD(acq)
-                except AttributeError:
-                    std = calculate_numerical_STD(acq)
-
-                acq = acq.astype(np.float32) / max_DN
-
                 # print(file_name_array)
+                acq = None
+                std = None
                 exp = None
                 ill = None
                 mag = None
@@ -144,7 +92,7 @@ def load_images(path):
                         exp = float(element.removesuffix('ms'))
                     else:
                         name = element
-                imageSet = make_ImageSet(acq, std, file, exp, mag, ill, name)
+                imageSet = ImageSet(acq, std, file, exp, mag, ill, name, path)
                 list_of_ImageSets.append(imageSet)
 
     return list_of_ImageSets
@@ -152,7 +100,7 @@ def load_images(path):
 
 def calculate_numerical_STD(acq):
 
-    STD_image = np.zeros((im_size_y, im_size_x, channels), dtype=float)
+    STD_image = np.zeros((im_size_y, im_size_x, channels), dtype=(np.dtype('float32')))
 
     for c in range(channels):
 
@@ -161,46 +109,45 @@ def calculate_numerical_STD(acq):
     return STD_image
 
 
-def save_images_8bit(list_of_imageSets, path):
+def save_image_8bit(imageSet, path):
 
-    for imageSet in list_of_imageSets:
+    bit8_image = imageSet.acq
+    max_float = np.amax(bit8_image)
 
-        bit8_image = imageSet.acq
-        max_float = np.amax(bit8_image)
+    if max_float > 1:
         bit8_image /= max_float
-        bit8_image = (bit8_image*max_DN).astype(int)
-        path_name = os.path.join(path, imageSet.file_name)
-        cv.imwrite(path_name, bit8_image)
 
-        if imageSet.std is not None:
+    bit8_image = (bit8_image*max_DN).astype(int)
+    path_name = os.path.join(path, imageSet.file_name)
+    cv.imwrite(path_name, bit8_image)
 
-            bit8_image = (imageSet.std*max_DN).astype(int)
-            cv.imwrite(path_name.removesuffix('.tif')+' STD.tif', bit8_image)
+    if imageSet.std is not None:
+
+        bit8_image = (imageSet.std*max_DN).astype(int)
+        cv.imwrite(path_name.removesuffix('.tif')+' STD.tif', bit8_image)
 
     return
 
 
-def save_images_32bit(list_of_imageSets, path):
+def save_image_32bit(imageSet, path):
 
-    for imageSet in list_of_imageSets:
+    bit32_image = imageSet.acq
+    path_name = os.path.join(path, imageSet.file_name)
+    cv.imwrite(path_name.removesuffix('.tif')+' blue.tif',
+               bit32_image[:, :, 0])
+    cv.imwrite(path_name.removesuffix('.tif') + ' green.tif',
+               bit32_image[:, :, 1])
+    cv.imwrite(path_name.removesuffix('.tif') + ' red.tif',
+               bit32_image[:, :, 2])
 
-        bit32_image = imageSet.acq
-        path_name = os.path.join(path, imageSet.file_name)
-        cv.imwrite(path_name.removesuffix('.tif')+' blue.tif',
+    if imageSet.std is not None:
+
+        bit32_image = imageSet.std
+        cv.imwrite(path_name.removesuffix('.tif') + ' STD blue.tif',
                    bit32_image[:, :, 0])
-        cv.imwrite(path_name.removesuffix('.tif') + ' green.tif',
+        cv.imwrite(path_name.removesuffix('.tif') + ' STD green.tif',
                    bit32_image[:, :, 1])
-        cv.imwrite(path_name.removesuffix('.tif') + ' red.tif',
+        cv.imwrite(path_name.removesuffix('.tif') + ' STD red.tif',
                    bit32_image[:, :, 2])
-
-        if imageSet.std is not None:
-
-            bit32_image = imageSet.std
-            cv.imwrite(path_name.removesuffix('.tif') + ' STD blue.tif',
-                       bit32_image[:, :, 0])
-            cv.imwrite(path_name.removesuffix('.tif') + ' STD green.tif',
-                       bit32_image[:, :, 1])
-            cv.imwrite(path_name.removesuffix('.tif') + ' STD red.tif',
-                       bit32_image[:, :, 2])
 
     return
