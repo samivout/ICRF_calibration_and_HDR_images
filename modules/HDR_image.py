@@ -1,27 +1,31 @@
 import ImageSet as IS
+from ImageSet import ImageSet
 import image_calculation as ic
 import numpy as np
 import read_data as rd
-import cv2 as cv
-import math
-import os
+from typing import Optional
+from typing import List
 
 im_size_x = rd.read_config_single('image size x')
 im_size_y = rd.read_config_single('image size y')
 acq_path = rd.read_config_single('acquired images path')
 flat_path = rd.read_config_single('flat fields path')
+dark_path = rd.read_config_single('dark frames path')
 out_path = rd.read_config_single('corrected output path')
 ICRF_calibrated_file = rd.read_config_single('calibrated ICRFs')
-ICRF_calibrated = rd.read_data_from_txt(ICRF_calibrated_file)
-ICRF_diff = np.zeros_like(ICRF_calibrated)
+ICRF = rd.read_data_from_txt(ICRF_calibrated_file)
+ICRF_diff = np.zeros_like(ICRF)
 channels = rd.read_config_single('channels')
 bit_depth = rd.read_config_single('bit depth')
-max_DN = 2**bit_depth-1
+bits = 2**bit_depth
+max_DN = bits-1
+min_DN = 0
 datapoints = rd.read_config_single('final datapoints')
+data_multiplier = datapoints/bits
 STD_arr = rd.read_data_from_txt(rd.read_config_single('STD data'))
 
 
-def separate_to_sublists(list_of_ImageSets):
+def separate_to_sublists(list_of_ImageSets: List[ImageSet]):
     """
     Separates a list of ImageSet objects into sublists by their subject names,
     used magnification and used illumination type.
@@ -63,7 +67,7 @@ def separate_to_sublists(list_of_ImageSets):
     return list_of_sublists
 
 
-def hat_weight(x):
+def hat_weight(x: float):
 
     if x <= 0.5:
         return x
@@ -71,7 +75,7 @@ def hat_weight(x):
         return 1-x
 
 
-def create_HDR_absolute(list_of_ImageSets):
+def create_HDR_absolute(list_of_ImageSets: List[ImageSet]):
 
     hat_weight_vectorized = np.vectorize(hat_weight)
 
@@ -109,25 +113,23 @@ def create_HDR_absolute(list_of_ImageSets):
             denominator += weight_array
 
         HDR_std = np.sqrt(np.divide(numerator, denominator**2,
-                            out=np.zeros_like(numerator),
-                            where=denominator != 0))
+                                    out=np.zeros_like(numerator),
+                                    where=denominator != 0))
 
-    imageSet_HDR = IS.make_ImageSet(HDR_acq,
-                                    HDR_std,
-                                    list_of_ImageSets[0].file_name,
-                                    None,
-                                    list_of_ImageSets[0].mag,
-                                    list_of_ImageSets[0].ill,
-                                    list_of_ImageSets[0].name)
+    imageSet_HDR = ImageSet(HDR_acq,
+                            HDR_std,
+                            list_of_ImageSets[0].file_name,
+                            None,
+                            list_of_ImageSets[0].mag,
+                            list_of_ImageSets[0].ill,
+                            list_of_ImageSets[0].name,
+                            None)
 
     return imageSet_HDR
 
 
 def linearize_image_vectorized(imageSet):
 
-    datapoint_step = int(datapoints / (max_DN + 1))
-    sampled_ICRF = ICRF_calibrated[::datapoint_step, :]
-    sampled_ICRF_diff = ICRF_diff[::datapoint_step, :]
     acq = (imageSet.acq * max_DN).astype(int)
     acq_new = np.zeros(np.shape(acq), dtype=float)
     std_new = np.zeros(np.shape(acq), dtype=float)
@@ -135,8 +137,8 @@ def linearize_image_vectorized(imageSet):
 
         # The ICRFs are in reverse order in the .txt file when compared
         # to how OpenCV opens the channels.
-        acq_new[:, :, c] = sampled_ICRF[acq[:, :, c], channels-1-c]
-        std_new[:, :, c] = sampled_ICRF_diff[acq[:, :, c], channels-1-c] * \
+        acq_new[:, :, c] = ICRF[acq[:, :, c], channels-1-c]
+        std_new[:, :, c] = ICRF_diff[acq[:, :, c], channels-1-c] * \
                            STD_arr[acq[:, :, c], channels-1-c]
 
     imageSet.acq = acq_new
@@ -145,60 +147,59 @@ def linearize_image_vectorized(imageSet):
     return imageSet
 
 
-def process_HDR_images():
+def process_HDR_images(save_linear: Optional[bool] = False,
+                       save_HDR: Optional[bool] = True,
+                       save_8bit: Optional[bool] = True,
+                       save_32bit: Optional[bool] = False):
 
     # Determine the numerical derivative of the calibrated ICRFs.
     global ICRF_diff
-    dx = 1/(datapoints-1)
+    dx = 1/(bits-1)
     for c in range(channels):
 
-        ICRF_diff[:, c] = np.gradient(ICRF_calibrated[:, c], dx)
+        ICRF_diff[:, c] = np.gradient(ICRF[:, c], dx)
 
     # Initialize image lists and name lists
-    acq_list = IS.load_images(acq_path)
-    flat_list = IS.load_images(flat_path)
-    acq_list = ic.fixed_pattern_correction(acq_list, flat_list)
-    linearized_list = []
+    acq_list = IS.create_imageSets(acq_path)
+    acq_sublists = separate_to_sublists(acq_list)
+    del acq_list
+
+    flat_list = IS.create_imageSets(flat_path)
+    for flatSet in flat_list:
+        flatSet.load_acq()
+        flatSet.load_std()
+
+    dark_list = IS.create_imageSets(dark_path)
+    for darkSet in dark_list:
+        darkSet.load_acq()
+        darkSet.load_std()
+
+    for sublist in acq_sublists:
+
+        sublist = ic.image_correction(sublist, dark_list, flat_list)
+
+        for imageSet in sublist:
+
+            imageSet = linearize_image_vectorized(imageSet)
+            if save_linear:
+                if save_8bit:
+                    IS.save_image_8bit(imageSet, out_path)
+                if save_32bit:
+                    IS.save_image_32bit(imageSet, out_path)
+
     del flat_list
+    del dark_list
 
-    for imageSet in acq_list:
-        linearized_list.append(linearize_image_vectorized(imageSet))
-    del acq_list
-    '''
-    IS.save_images_8bit(linearized_list, out_path)
-    IS.save_images_32bit(linearized_list, out_path)
-    '''
-    list_of_linearized_sublists = separate_to_sublists(linearized_list)
-    del linearized_list
+    for sublist in acq_sublists:
 
-    HDR_list = []
-    for sublist in list_of_linearized_sublists:
-        HDR_list.append(create_HDR_absolute(sublist))
+        if save_HDR and len(sublist) > 1:
 
-    IS.save_images_8bit(HDR_list, out_path)
-    IS.save_images_32bit(HDR_list, out_path)
+            imageSet_HDR = create_HDR_absolute(sublist)
+            if save_8bit:
+                IS.save_image_8bit(imageSet_HDR, out_path)
+            if save_32bit:
+                IS.save_image_32bit(imageSet_HDR, out_path)
 
-    '''
-    IS.save_images_8bit(linearized_list, out_path)
-    IS.save_images_32bit(linearized_list, out_path)
-    
-    list_of_sublists = separate_to_sublists(linearized_list)
-    del linearized_list
-
-    HDR_images = []
-    for sublist in list_of_sublists:
-        HDRset = create_HDR(sublist)
-        HDR_images.append(HDRset)
-    '''
-    '''
-    acq_sublists_by_name = separate_to_sublists(acq_list)
-    del acq_list
-
-    linearized_list = []
-    for sublist in acq_sublists_by_name:
-        HDRset = create_HDR(sublist)
-        linearized_list.append(HDRset)
-    '''
     return
 
 
