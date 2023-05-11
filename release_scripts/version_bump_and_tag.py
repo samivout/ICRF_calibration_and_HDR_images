@@ -9,7 +9,7 @@ def get_github_status():
     git_process = subprocess.run(["git", "status", "-s"], capture_output=True)
     ret = git_process.stdout.decode('UTF-8')
     print(ret)
-    if ret == "":
+    if not ret:
 
         print("Working tree is clean, ready to proceed.")
         return True
