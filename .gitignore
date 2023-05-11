@@ -4,3 +4,5 @@
 /data/ICRF data only CCD/
 /data/Mean data of camera/
 /data/Modal data of camera/
+/modules/__pycache__/
+/output/
