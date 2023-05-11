@@ -7,9 +7,16 @@ version_file_path = "../version.txt"
 def get_github_status():
 
     git_process = subprocess.run(["git", "status", "-s"], capture_output=True)
-    print(git_process.stdout)
+    ret = git_process.stdout.decode('UTF-8')
+    print(ret)
+    if ret == r"b''":
 
-    return
+        print("Working tree is clean, ready to proceed.")
+        return True
+
+    print("There are uncommitted differences, cannot proceed.")
+
+    return False
 
 
 def release():
