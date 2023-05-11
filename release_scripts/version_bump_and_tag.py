@@ -6,7 +6,7 @@ version_file_path = "../version.txt"
 
 def get_github_status():
 
-    git_process = subprocess.run(["git", "status", "-s", "-b"], capture_output=True)
+    git_process = subprocess.run(["git", "status", "-s"], capture_output=True)
     print(git_process.stdout)
 
     return
