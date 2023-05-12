@@ -2,14 +2,19 @@ import subprocess
 import os
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
+root_directory = os.path.dirname(script_directory)
 version_file_path = os.path.join(script_directory, "../version.txt")
-print(version_file_path)
+# print(root_directory)
+# print(version_file_path)
 version_number_levels = 3
 
 
 def get_github_status():
 
-    git_process = subprocess.run(["git", "status", "-s"], capture_output=True)
+    git_process = subprocess.run(["git", "status", "-s"],
+                                 capture_output=True,
+                                 cwd=root_directory)
+
     ret = git_process.stdout.decode('UTF-8')
     if not ret:
 
