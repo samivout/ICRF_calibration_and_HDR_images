@@ -6,3 +6,8 @@
 /data/Modal data of camera/
 /modules/__pycache__/
 /output/
+/.idea
+/Pipfile.lock
+
+*.xml
+*.iml
