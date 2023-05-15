@@ -47,16 +47,13 @@ def git_bump_and_tag(version_string: str):
     ret_tag = git_tag_process.stdout.decode('UTF-8')
     print(ret_tag)
 
-    print('Ready to push. Do you want me to push now y/n?')
+    print('Ready to push. Do you want me to push to origin:master now y/n?')
     push_response = input()
     if push_response.casefold() == 'y':
 
-        git_push_tag_process = subprocess.run(["git", "push",
-                                               "origin", version_string],
-                                              capture_output=True,
-                                              cwd=root_directory)
-        ret_push = git_push_tag_process.stdout.decode('UTF-8')
-        print(ret_push)
+        subprocess.run(["git", "push", "origin", "master", version_string],
+                       cwd=root_directory)
+        print('Done pushing.')
     else:
         print('Remember to push the tag.')
 
@@ -188,8 +185,8 @@ def release_process():
     print(f'Current version number is {current_version_string}')
 
     working_tree_is_clean = get_github_status()
-    # if not working_tree_is_clean:
-        # return
+    if not working_tree_is_clean:
+        return
 
     new_version_number = update_version_number(current_version_number)
     new_version_string = '.'.join(str(x) for x in new_version_number)
