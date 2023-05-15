@@ -33,8 +33,6 @@ def get_github_status():
 def git_bump_and_tag(version_string: str):
 
     git_add_process = subprocess.run(["git", "add", version_file_path])
-    ret_add = git_add_process.stdout.decode('UTF-8')
-    print(ret_add)
 
     git_commit_process = subprocess.run(["git", "commit", "-m",
                                          f'Bump version to {version_string}'],
