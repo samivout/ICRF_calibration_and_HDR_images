@@ -48,8 +48,8 @@ def git_bump_and_tag(version_string: str):
     print(ret_tag)
 
     print('Ready to push. Do you want me to push to origin:master now y/n?')
-    push_response = input()
-    if push_response.casefold() == 'y':
+    push_response = input().casefold()
+    if push_response == 'y':
 
         subprocess.run(["git", "push", "origin", "master", version_string],
                        cwd=root_directory)
@@ -150,7 +150,7 @@ def update_version_number(current_version_number: list[int]):
         print('Enter either ' + ', '.join(used_semantic_levels) +
               ' to bump the respective semantic level, or enter your own '
               'version number. Enter c to cancel.')
-        text_input = input()
+        text_input = input().casefold()
         if text_input == 'c':
             input_accepted = True
         bump_level_found = False
@@ -192,8 +192,8 @@ def release_process():
     new_version_string = '.'.join(str(x) for x in new_version_number)
     print(f'New version number would be {new_version_string}')
     print('Continue with this number y/n?')
-    continue_response = input()
-    if continue_response.casefold() == 'y':
+    continue_response = input().casefold()
+    if continue_response == 'y':
         save_version_number(new_version_string)
         git_bump_and_tag(current_version_string)
     else:
