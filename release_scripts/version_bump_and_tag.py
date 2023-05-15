@@ -62,14 +62,13 @@ def get_version_number():
     return version_number_str
 
 
-def save_version_number(new_version_number: list[int]):
+def save_version_number(version_string: str):
     """
     Save version number to the version.txt file.
     Args:
-        new_version_number: the version number to be saved as list of ints.
+        version_string: the version number to be saved as a string.
     """
     version_file = open(version_file_path, "w")
-    version_string = '.'.join(str(x) for x in new_version_number)
     version_file.write(version_string)
     version_file.close()
 
@@ -181,7 +180,10 @@ def release_process():
     print('Continue with this number y/n?')
     continue_response = input()
     if continue_response.casefold() == 'y':
+        save_version_number(new_version_string)
         git_bump_and_tag(current_version_string)
+    else:
+        print('Version number bump cancelled.')
 
     return
 
