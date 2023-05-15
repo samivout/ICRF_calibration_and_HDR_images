@@ -47,7 +47,18 @@ def git_bump_and_tag(version_string: str):
     ret_tag = git_tag_process.stdout.decode('UTF-8')
     print(ret_tag)
 
-    print('Ready to push.')
+    print('Ready to push. Do you want me to push now y/n?')
+    push_response = input()
+    if push_response.casefold() == 'y':
+
+        git_push_tag_process = subprocess.run(["git", "push",
+                                               "origin", version_string],
+                                              capture_output=True,
+                                              cwd=root_directory)
+        ret_push = git_push_tag_process.stdout.decode('UTF-8')
+        print(ret_push)
+    else:
+        print('Remember to push the tag.')
 
     return
 
