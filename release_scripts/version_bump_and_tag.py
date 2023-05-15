@@ -190,6 +190,9 @@ def release_process():
 
     new_version_number = update_version_number(current_version_number)
     new_version_string = '.'.join(str(x) for x in new_version_number)
+    if new_version_number == current_version_number:
+        print('Version number bump cancelled.')
+        return
     print(f'New version number would be {new_version_string}')
     print('Continue with this number y/n?')
     continue_response = input().casefold()
