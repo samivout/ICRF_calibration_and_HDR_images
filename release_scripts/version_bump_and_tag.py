@@ -36,10 +36,14 @@ def git_bump_and_tag(version_string: str):
                                          f'Bump version to {version_string}'],
                                         capture_output=True,
                                         cwd=root_directory)
+    ret_commit = git_commit_process.stdout.decode('UTF-8')
+    print(ret_commit)
 
     git_tag_process = subprocess.run(["git", "tag", version_string],
                                      capture_output=True,
                                      cwd=root_directory)
+    ret_tag = git_tag_process.stdout.decode('UTF-8')
+    print(ret_tag)
 
     print('Ready to push.')
 
