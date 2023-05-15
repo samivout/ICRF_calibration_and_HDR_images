@@ -4,20 +4,23 @@ import os
 script_directory = os.path.dirname(os.path.realpath(__file__))
 root_directory = os.path.dirname(script_directory)
 version_file_path = os.path.join(script_directory, "../version.txt")
-# print(root_directory)
-# print(version_file_path)
-version_number_levels = 3
+semantic_levels = ['major', 'minor', 'patch']
+version_number_levels = len(semantic_levels)
 
 
 def get_github_status():
+    """
+    Get status of the repo in which the script is run in. Return true if there
+    are no uncommitted changes and false if there are changes. Additionally,
+    print the uncommitted changes.
+    Returns: bool
+    """
+    git_status_process = subprocess.run(["git", "status", "-s"],
+                                        capture_output=True,
+                                        cwd=root_directory)
 
-    git_process = subprocess.run(["git", "status", "-s"],
-                                 capture_output=True,
-                                 cwd=root_directory)
-
-    ret = git_process.stdout.decode('UTF-8')
+    ret = git_status_process.stdout.decode('UTF-8')
     if not ret:
-
         print("Working tree is clean, ready to proceed.")
         return True
 
@@ -27,8 +30,27 @@ def get_github_status():
     return False
 
 
-def get_version_number():
+def git_bump_and_tag(version_string: str):
 
+    git_commit_process = subprocess.run(["git", "commit", "-m",
+                                         f'Bump version to {version_string}'],
+                                        capture_output=True,
+                                        cwd=root_directory)
+
+    git_tag_process = subprocess.run(["git", "tag", version_string],
+                                     capture_output=True,
+                                     cwd=root_directory)
+
+    print('Ready to push.')
+
+    return
+
+
+def get_version_number():
+    """
+    Get version number from the version.txt file.
+    Returns: version number as a string or None if problems are encountered.
+    """
     try:
         version_file = open(version_file_path, "r")
         version_number_str = version_file.read()
@@ -37,68 +59,132 @@ def get_version_number():
         print('Version.txt not found!')
         return None
 
-    version_number = parse_version_number(version_number_str)
+    return version_number_str
 
-    return version_number
+
+def save_version_number(new_version_number: list[int]):
+    """
+    Save version number to the version.txt file.
+    Args:
+        new_version_number: the version number to be saved as list of ints.
+    """
+    version_file = open(version_file_path, "w")
+    version_string = '.'.join(str(x) for x in new_version_number)
+    version_file.write(version_string)
+    version_file.close()
+
+    return
 
 
 def parse_version_number(version_number_str: str):
+    """
+    Parse version number from a string.
+    Args:
+        version_number_str: string representing the version number. Should be in
+    the format of semantic version numbers with desired number of levels.
 
-    version_number_list = version_number_str.split('.')
+    Returns: the parsed version number as a list of ints, or None if parsing is
+        not successful.
+    """
+    parsing_successful = True
+    version_number_split = version_number_str.split('.')
     version_number = []
 
-    if len(version_number_list) > version_number_levels:
+    if len(version_number_split) > version_number_levels:
         print('Too many separators in version number!')
-        return None
+        parsing_successful = False
 
-    if len(version_number_list) < version_number_levels:
+    if len(version_number_split) < version_number_levels:
         print('Too few separators in version number!')
-        return None
+        parsing_successful = False
 
-    for element in version_number_list:
+    for element in version_number_split:
         try:
             version_number.append(int(element))
         except ValueError:
-            print('There is something unexpected in the version number file!')
-            return None
+            print('There is something unexpected in the version number!')
+            parsing_successful = False
+
+    for element in version_number:
+        if element < 0:
+            print('No negative numbers in version number!')
+            parsing_successful = False
+
+    if not parsing_successful:
+        return None
 
     return version_number
 
 
 def update_version_number(current_version_number: list[int]):
+    """
+    Updates the version number based on user input. User can either input a
+    hardcoded semantic level to bump the respective level, or their own version
+    number. User can also cancel by entering 'c'.
+    Args:
+        current_version_number: current version number as a list of ints.
 
+    Returns: an updated version number as a list of ints.
+    """
     new_version_number = current_version_number
-    input_not_accepted = True
-    while input_not_accepted:
+    input_accepted = False
+    used_semantic_levels = []
+    for i in range(version_number_levels):
+        used_semantic_levels.append(semantic_levels[i])
 
-        print('Enter major, minor or patch to bump the respective version level'
-              ', or enter your own version number. Enter c to cancel')
+    while not input_accepted:
+
+        print('Enter either ' + ', '.join(used_semantic_levels) +
+              ' to bump the respective semantic level, or enter your own '
+              'version number. Enter c to cancel.')
         text_input = input()
         if text_input == 'c':
-            input_not_accepted = False
+            input_accepted = True
+        bump_level_found = False
+        for i, semantic_level in enumerate(used_semantic_levels):
+            if text_input == semantic_level:
+                new_version_number[i] += 1
+                bump_level_found = True
+                input_accepted = True
+                continue
+            if bump_level_found:
+                new_version_number[i] = 0
+        if not bump_level_found and not input_accepted:
+            parsed_version_number = parse_version_number(text_input)
+            if parsed_version_number is not None:
+                new_version_number = parsed_version_number
+                input_accepted = True
 
     return new_version_number
 
 
 def release_process():
-
-    current_version_number = get_version_number()
+    """
+    Function that manages the whole process of updating the version number.
+    Returns:
+    """
+    current_version_string = get_version_number()
+    current_version_number = parse_version_number(current_version_string)
     if current_version_number is None:
         print('Aborting process.')
         return
 
-    print(f'Current version number is ' +
-          '.'.join(str(x) for x in current_version_number))
+    print(f'Current version number is {current_version_string}')
 
     working_tree_is_clean = get_github_status()
-    if not working_tree_is_clean:
-        return
+    # if not working_tree_is_clean:
+        # return
 
     new_version_number = update_version_number(current_version_number)
+    new_version_string = '.'.join(str(x) for x in new_version_number)
+    print(f'New version number would be {new_version_string}')
+    print('Continue with this number y/n?')
+    continue_response = input()
+    if continue_response.casefold() == 'y':
+        git_bump_and_tag(current_version_string)
 
     return
 
 
 if __name__ == "__main__":
-
     release_process()
