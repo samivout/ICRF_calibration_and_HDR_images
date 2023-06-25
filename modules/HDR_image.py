@@ -1,14 +1,15 @@
 import ImageSet as IS
 from ImageSet import ImageSet
-import image_calculation as ic
+import image_correction as ic
 import numpy as np
 import read_data as rd
 from typing import Optional
 from typing import List
+import general_functions as gf
 
 im_size_x = rd.read_config_single('image size x')
 im_size_y = rd.read_config_single('image size y')
-acq_path = rd.read_config_single('acquired images path')
+default_acq_path = rd.read_config_single('acquired images path')
 flat_path = rd.read_config_single('flat fields path')
 dark_path = rd.read_config_single('dark frames path')
 out_path = rd.read_config_single('corrected output path')
@@ -23,48 +24,6 @@ min_DN = 0
 datapoints = rd.read_config_single('final datapoints')
 data_multiplier = datapoints/bits
 STD_arr = rd.read_data_from_txt(rd.read_config_single('STD data'))
-
-
-def separate_to_sublists(list_of_ImageSets: List[ImageSet]):
-    """
-    Separates a list of ImageSet objects into sublists by their subject names,
-    used magnification and used illumination type.
-    :param list_of_ImageSets: list of ImageSet objects.
-    :return: list of lists containing ImageSet objects.
-    """
-    list_of_sublists = []
-
-    for imageSet in list_of_ImageSets:
-
-        # Check if list_of_sublists is empty. If yes, create first sublist and
-        # automatically add the first ImageSet object to it.
-        if not list_of_sublists:
-
-            sublist = [imageSet]
-            list_of_sublists.append(sublist)
-            continue
-
-        number_of_sublists = len(list_of_sublists)
-        for i in range(number_of_sublists):
-
-            sublist = list_of_sublists[i]
-            current_name = imageSet.name
-            current_ill = imageSet.ill
-            current_mag = imageSet.mag
-            names_in_sublist = sublist[0].name
-            ill_in_sublist = sublist[0].ill
-            mag_in_sublist = sublist[0].mag
-            if current_name == names_in_sublist and \
-                    current_ill == ill_in_sublist and \
-                    current_mag == mag_in_sublist:
-                sublist.append(imageSet)
-                break
-            if number_of_sublists - 1 - i == 0:
-                additional_list = [imageSet]
-                list_of_sublists.append(additional_list)
-                break
-
-    return list_of_sublists
 
 
 def hat_weight(x: float):
@@ -139,7 +98,7 @@ def linearize_image_vectorized(imageSet):
         # to how OpenCV opens the channels.
         acq_new[:, :, c] = ICRF[acq[:, :, c], channels-1-c]
         std_new[:, :, c] = ICRF_diff[acq[:, :, c], channels-1-c] * \
-                           STD_arr[acq[:, :, c], channels-1-c]
+            STD_arr[acq[:, :, c], channels-1-c]
 
     imageSet.acq = acq_new
     imageSet.std = std_new
@@ -147,10 +106,12 @@ def linearize_image_vectorized(imageSet):
     return imageSet
 
 
-def process_HDR_images(save_linear: Optional[bool] = False,
+def process_HDR_images(acq_path: Optional[str] = default_acq_path,
+                       save_linear: Optional[bool] = False,
                        save_HDR: Optional[bool] = True,
                        save_8bit: Optional[bool] = True,
-                       save_32bit: Optional[bool] = False):
+                       save_32bit: Optional[bool] = False,
+                       pass_linear: Optional[bool] = False):
 
     # Determine the numerical derivative of the calibrated ICRFs.
     global ICRF_diff
@@ -161,7 +122,7 @@ def process_HDR_images(save_linear: Optional[bool] = False,
 
     # Initialize image lists and name lists
     acq_list = IS.create_imageSets(acq_path)
-    acq_sublists = separate_to_sublists(acq_list)
+    acq_sublists = gf.separate_to_sublists(acq_list)
     del acq_list
 
     flat_list = IS.create_imageSets(flat_path)
@@ -189,6 +150,9 @@ def process_HDR_images(save_linear: Optional[bool] = False,
 
     del flat_list
     del dark_list
+
+    if pass_linear:
+        return acq_sublists
 
     for sublist in acq_sublists:
 

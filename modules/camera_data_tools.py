@@ -3,6 +3,7 @@ import os
 import math
 import read_data as rd
 from scipy.interpolate import interp1d
+from typing import Optional
 
 current_directory = os.path.dirname(__file__)
 data_directory = os.path.join(os.path.dirname(current_directory), 'data')
@@ -82,6 +83,9 @@ def clean_data_edges(base_data_arr):
 
 def interpolate_data(clean_data_arr):
 
+    if bits == datapoints:
+        return clean_data_arr
+
     interpolated_data = np.zeros((bits, datapoints), dtype=float)
 
     for i in range(bits):
@@ -97,7 +101,7 @@ def interpolate_data(clean_data_arr):
     return interpolated_data
 
 
-def clean_and_interpolate_data():
+def clean_and_interpolate_data(path: Optional[str] = None):
 
     base_data_arr = np.zeros((bits, bits, channels), dtype=int)
     final_data_arr = np.zeros((bits, datapoints, channels), dtype=float)
@@ -107,7 +111,11 @@ def clean_and_interpolate_data():
         base_data_name = base_data_files[c]
         mean_data_name = mean_data_files[c]
 
-        base_data_arr[:, :, c] = rd.read_data_from_txt(base_data_name)
+        if not path:
+            base_data_arr[:, :, c] = rd.read_data_from_txt(base_data_name)
+        else:
+            base_data_arr[:, :, c] = rd.read_data_from_txt(base_data_name, path)
+
         base_data_arr[:, :, c] = clean_data_edges(base_data_arr[:, :, c])
         final_data_arr[:, :, c] = interpolate_data(base_data_arr[:, :, c])
 

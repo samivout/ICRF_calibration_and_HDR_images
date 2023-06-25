@@ -1,11 +1,14 @@
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 import read_data as rd
+import seaborn as sns
 
 current_directory = os.path.dirname(__file__)
 output_directory = os.path.join(os.path.dirname(current_directory), 'output')
 datapoints = rd.read_config_single('final datapoints')
+datapoint_multiplier = rd.read_config_single('datapoint multiplier')
 channels = rd.read_config_single('channels')
 bit_depth = rd.read_config_single('bit depth')
 max_DN = 2**bit_depth
@@ -70,7 +73,7 @@ def plot_noise_profiles_2d(mean_data_array):
     else:
         row_step = int(bound_diff/number_of_profiles)
 
-    sampled_mean_data = mean_data_array[lower_bound:upper_bound:row_step, ::4, :]
+    sampled_mean_data = mean_data_array[lower_bound:upper_bound:row_step, ::datapoint_multiplier, :]
     x_range = np.linspace(0, 255, max_DN)
 
     for c in range(channels):
@@ -83,10 +86,24 @@ def plot_noise_profiles_2d(mean_data_array):
             mode_index = np.argmax(normalized_row)
             mode = normalized_row[mode_index]
             plt.xlim(lower_bound, upper_bound)
+            if np.shape(normalized_row)[0] == 64:
+                print('Ree')
             plt.plot(x_range, normalized_row)
             plt.vlines(mode_index, 0, mode)
 
         plt.savefig(os.path.join(output_directory, f'Profiles{c}.png'), dpi=300)
+        plt.clf()
+
+    return
+
+
+def plot_heatmap(mean_data_array):
+
+    mean_data_array = normalize_rows_by_sum(mean_data_array)
+
+    for c in range(channels):
+        ax = sns.heatmap(mean_data_array[:, :, c], square=True, norm=LogNorm())
+        plt.savefig(os.path.join(output_directory, f'Heatmap{c}.png'), dpi=700)
         plt.clf()
 
     return
@@ -105,14 +122,14 @@ def plot_ICRF(ICRF_array):
 
 def normalize_rows_by_max(mean_data_arr):
 
-    mean_data_arr = mean_data_arr / np.amax(mean_data_arr, axis=1, keepdims=1)
+    mean_data_arr = mean_data_arr / np.amax(mean_data_arr, axis=1, keepdims=True)
 
     return mean_data_arr
 
 
 def normalize_rows_by_sum(mean_data_arr):
 
-    mean_data_arr = mean_data_arr / mean_data_arr.sum(axis=1, keepdims=1)
+    mean_data_arr = mean_data_arr / mean_data_arr.sum(axis=1, keepdims=True)
 
     return mean_data_arr
 
@@ -148,6 +165,7 @@ def mean_data_plot():
     plot_ICRF(mean_ICRF_array)
     plot_noise_profiles_2d(mean_data_array)
     plot_noise_profiles_3d(mean_data_array)
+    plot_heatmap(mean_data_array)
     print_mean_data_mode(mean_data_array)
 
 

@@ -60,7 +60,10 @@ def _datapoint_distances(dist, number_of_heights):
     mode = np.argmax(dist)
     second_mode = None
     if mode != dist_length-1:
-        second_mode = np.argmax(dist[mode+1:-1])
+        try:
+            second_mode = np.argmax(dist[mode+1:-1])
+        except ValueError:
+            second_mode = None
     if second_mode is not None:
         if dist[mode] == dist[second_mode]:
 
@@ -222,6 +225,9 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
 
 def interpolate_ICRF(ICRF_array):
 
+    if bits == datapoints:
+        return ICRF_array
+
     x_new = np.linspace(0, 1, num=bits)
     x_old = np.linspace(0, 1, num=datapoints)
     interpolated_ICRF = np.zeros((bits, channels), dtype=float)
@@ -277,7 +283,8 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
         PCA_array[:, :, i] = rd.read_data_from_txt(PCA_file_name)
         mean_ICRF_array[:, i] = rd.read_data_from_txt(mean_ICRF_file_name)
 
-        # mean_ICRF_array[:, i] = np.linspace(0, 1, 1024)
+        # mean_ICRF_array[:, i] = np.linspace(0, 1, datapoints)
+        # mean_ICRF_array[:, i] = mean_ICRF_array[:, i]**4
 
         edge_distances = _process_datapoint_distances(mean_data_array[:, :, i],
                                                       evaluation_heights)
@@ -328,7 +335,7 @@ if __name__ == "__main__":
         new_hist = np.histogram(data, bins=1024, range=(0, 1))[0]
         hist = np.vstack((hist, new_hist))
 
-    perfect_hist_counts = np.array([0, 0, 0, 5, 10, 20, 25, 25, 20, 10, 5, 0, 0])
+    perfect_hist_counts = np.array([0, 0, 0, 5, 10, 20, 25, 20, 10, 5, 0, 0, ])
     perfect_linear_scale = np.linspace(0, 1, np.shape(perfect_hist_counts)[0],
                                        dtype=float)
     perfect_edge_dists = _datapoint_distances(perfect_hist_counts, 20)

@@ -74,7 +74,7 @@ def _read_dorf_data(file_name):
     return list_of_curves
 
 
-def _invert_data(list_of_curves, new_datapoints):
+def _invert_and_interpolate_data(list_of_curves, new_datapoints):
     """ Invert the camera response functions obtained from the dorfCurves.txt
     file. Numpy interpolation is used to obtain the same digital value
     datapoints for all curves, as originally the evenly spaced datapoints were
@@ -91,19 +91,27 @@ def _invert_data(list_of_curves, new_datapoints):
                 list of numpy float arrays, one for each color channel,
                 containing the inverted camera response functions, or ICRFs.
     """
+    list_of_processed_curves = []
     x_old = np.linspace(0, 1, dorf_datapoints)
     x_new = np.linspace(0, 1, new_datapoints)
 
     for index, arr in enumerate(list_of_curves):
         rows = arr.shape[0]
+        y_new = np.zeros(new_datapoints, dtype=float)
 
         for i in range(rows):
             y = arr[i]
-            arr[i] = np.interp(x_old, y, x_new)
+            y_inv = np.interp(x_old, y, x_old)
 
-        list_of_curves[index] = arr
+            if dorf_datapoints != new_datapoints:
 
-    return list_of_curves
+                interpolated_row = np.interp(x_new, x_old, y_inv)
+                y_new = np.vstack([y_new, interpolated_row])
+
+        y_new = np.delete(y_new, 0, 0)
+        list_of_processed_curves.append(y_new)
+
+    return list_of_processed_curves
 
 
 def _calculate_mean_curve(list_of_curves):
@@ -132,14 +140,14 @@ def process_CRF_data():
     ICRF, for each color channel separately.
     """
     list_of_curves = _read_dorf_data(dorf_file)
-    list_of_curves = _invert_data(list_of_curves, final_datapoints)
-    list_of_mean_curves = list_of_curves.copy()
+    processed_curves = _invert_and_interpolate_data(list_of_curves, final_datapoints)
+    list_of_mean_curves = processed_curves.copy()
     list_of_mean_curves = _calculate_mean_curve(list_of_mean_curves)
 
     for i in range(len(ICRF_files)):
 
         np.savetxt(os.path.join(data_directory, ICRF_files[i]),
-                   list_of_curves[i])
+                   processed_curves[i])
         np.savetxt(os.path.join(data_directory, mean_ICRF_files[i]),
                    list_of_mean_curves[i])
 
@@ -148,7 +156,7 @@ def process_CRF_data():
 
 if __name__ == "__main__":
     test_curves = _read_dorf_data(dorf_file)
-    test_curves = _invert_data(test_curves, final_datapoints)
+    test_curves = _invert_and_interpolate_data(test_curves, final_datapoints)
     test_mean_curves = test_curves.copy()
     test_mean_curves = _calculate_mean_curve(test_mean_curves)
 

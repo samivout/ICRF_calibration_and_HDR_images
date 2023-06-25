@@ -124,7 +124,8 @@ def _calculate_mean_data(separated_channels_list):
                 hist = np.histogram(
                     channel[row, col, :], bits, (min_DN, max_DN))[0]
 
-                row = round(np.sum(np.multiply(hist, weight)) / np.sum(hist))
+                # row = round(np.sum(np.multiply(hist, weight)) / np.sum(hist))
+                row = np.argmax(hist)
 
                 data_array[row, :, index] += hist
 

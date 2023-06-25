@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import configparser
+from typing import Optional
 
 current_directory = os.path.dirname(__file__)
 data_directory = os.path.join(os.path.dirname(current_directory), 'data')
@@ -64,18 +65,24 @@ def read_config_single(key):
     return single_item
 
 
-def read_data_from_txt(file_name):
+def read_data_from_txt(file_name: str, path: Optional[str] = None):
     """
-    Load numerical data from a .txt file of given name in the data directory
-    into a numpy array of float datatype.
+    Load numerical data from a .txt file of given name. Defaults to data
+    directory but optionally can use other paths.
 
-    :param file_name: the name of the .txt file that contains the desired data
-        to load.
+    Args:
+        file_name: name of the file to load.
+        path: path to the file, optional.
 
-    :return: Numpy array of the loaded data in float datatype.
+    Returns: numpy array of the txt file.
     """
-    data_array = np.loadtxt(os.path.join(data_directory, file_name),
-                            dtype=float)
+    if not path:
+        data_array = np.loadtxt(os.path.join(data_directory, file_name),
+                                dtype=float)
+    else:
+        load = os.path.join(path, file_name)
+        data_array = np.loadtxt(os.path.join(path, file_name),
+                                dtype=float)
 
     return data_array
 

@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 import read_data as rd
 from sklearn.decomposition import PCA
 
@@ -74,9 +73,6 @@ def analyze_principal_components():
         PCA_array = _calculate_principal_components(covariance_matrix)
 
         np.savetxt(os.path.join(data_directory, PCA_files[i]), PCA_array)
-
-        x_range = np.linspace(0, 1, datapoints)
-        plt.plot(x_range, )
 
     return
 

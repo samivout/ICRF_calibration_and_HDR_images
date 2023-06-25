@@ -53,9 +53,9 @@ class ImageSet(object):
             self.std = cv.imread(os.path.join(self.path, self.file_name.removesuffix(
                 '.tif') + ' STD.tif')).astype(np.float32) / (max_DN * math.sqrt(67))
         except FileNotFoundError:
-            self.std = calculate_numerical_STD((self.acq * max_DN).astype(int))
+            self.std = calculate_numerical_STD((self.acq * max_DN).astype(np.dtype('uint8')))
         except AttributeError:
-            self.std = calculate_numerical_STD((self.acq * max_DN).astype(int))
+            self.std = calculate_numerical_STD((self.acq * max_DN).astype(np.dtype('uint8')))
 
 
 def create_imageSets(path):
@@ -117,13 +117,13 @@ def save_image_8bit(imageSet, path):
     if max_float > 1:
         bit8_image /= max_float
 
-    bit8_image = (bit8_image*max_DN).astype(int)
+    bit8_image = (bit8_image*max_DN).astype(np.dtype('uint8'))
     path_name = os.path.join(path, imageSet.file_name)
     cv.imwrite(path_name, bit8_image)
 
     if imageSet.std is not None:
 
-        bit8_image = (imageSet.std*max_DN).astype(int)
+        bit8_image = (imageSet.std*max_DN).astype(np.dtype('uint8'))
         cv.imwrite(path_name.removesuffix('.tif')+' STD.tif', bit8_image)
 
     return

@@ -31,8 +31,13 @@ def get_github_status():
 
 
 def git_bump_and_tag(version_string: str):
-
-    git_add_process = subprocess.run(["git", "add", version_file_path])
+    """
+    Commit changed version.txt file and create a lightweight tag based on the
+    new version number. Additionally, push to origin:master if user wants to.
+    Args:
+        version_string: string representation of the new version number.
+    """
+    subprocess.run(["git", "add", version_file_path])
 
     git_commit_process = subprocess.run(["git", "commit", "-m",
                                          f'Bump version to {version_string}'],
@@ -153,6 +158,7 @@ def update_version_number(current_version_number: list[int]):
         text_input = input().casefold()
         if text_input == 'c':
             input_accepted = True
+
         bump_level_found = False
         for i, semantic_level in enumerate(used_semantic_levels):
             if text_input == semantic_level:
@@ -162,6 +168,7 @@ def update_version_number(current_version_number: list[int]):
                 continue
             if bump_level_found:
                 new_version_number[i] = 0
+
         if not bump_level_found and not input_accepted:
             parsed_version_number = parse_version_number(text_input)
             if parsed_version_number is not None:
@@ -190,9 +197,11 @@ def release_process():
 
     new_version_number = update_version_number(current_version_number)
     new_version_string = '.'.join(str(x) for x in new_version_number)
+
     if new_version_number == current_version_number:
         print('Version number bump cancelled.')
         return
+
     print(f'New version number would be {new_version_string}')
     print('Continue with this number y/n?')
     continue_response = input().casefold()
