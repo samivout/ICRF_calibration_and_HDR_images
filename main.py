@@ -1,4 +1,4 @@
-from modules import ICRF_calibration_algorithm as ICRF
+from modules import ICRF_calibration_noise as ICRF
 from modules import principal_component_analysis
 from modules import process_CRF_database
 from modules import read_data as rd
@@ -9,6 +9,7 @@ from modules import mean_data_plot as mdl
 from modules import camera_data_tools as cdt
 from modules import image_analysis as ia
 from modules import mean_data_collector as mdc
+from modules import ICRF_calibration_exposure as ICRF_e
 from typing import Optional
 from typing import List
 import os
@@ -53,9 +54,9 @@ def calibrate_ICRF():
         np.savetxt(os.path.join(output_directory,
                                 f'ICRFs{height}.txt'), ICRF_array)
 
-        plt.plot(x_range, ICRF_array[:, 0], color='r')
+        plt.plot(x_range, ICRF_array[:, 0], color='b')
         plt.plot(x_range, ICRF_array[:, 1], color='g')
-        plt.plot(x_range, ICRF_array[:, 2], color='b')
+        plt.plot(x_range, ICRF_array[:, 2], color='r')
         plt.savefig(os.path.join(output_directory, f'ICRFs{height}.png'), dpi=300)
         plt.clf()
 
@@ -64,6 +65,24 @@ def calibrate_ICRF():
                                     f'ICRF_calibrated.txt'), ICRF_array)
 
     np.savetxt(os.path.join(output_directory, 'EnergyArray.txt'), energy_array)
+
+    return
+
+
+def calibrate_ICRF_e():
+
+    x_range = np.linspace(0, 1, bits)
+    ICRF_array, initial_energy_array, final_energy_array = \
+        ICRF_e.calibration(lower_limit, upper_limit)
+
+    np.savetxt(os.path.join(output_directory,
+                            f'ICRF_exp.txt'), ICRF_array)
+
+    plt.plot(x_range, ICRF_array[:, 0], color='b')
+    plt.plot(x_range, ICRF_array[:, 1], color='g')
+    plt.plot(x_range, ICRF_array[:, 2], color='r')
+    plt.savefig(os.path.join(output_directory, f'ICRF_exp.png'), dpi=300)
+    plt.clf()
 
     return
 
@@ -92,16 +111,18 @@ def process_HDR():
     save_linear = True
     save_HDR = False
     pass_linear = False
+    fix_artifacts = False
     HDR.process_HDR_images(save_linear=save_linear,
                            save_HDR=save_HDR,
                            save_8bit=save_8bit,
                            save_32bit=save_32bit,
-                           pass_linear=pass_linear)
+                           pass_linear=pass_linear,
+                           fix_artifacts=fix_artifacts)
 
     return
 
 
-def large_linearity_analysis(paths: Optional[List[str]] = [data_directory]):
+def large_linearity_analysis_noise(paths: Optional[List[str]] = [data_directory]):
 
     linearity_results = []
 
@@ -110,6 +131,7 @@ def large_linearity_analysis(paths: Optional[List[str]] = [data_directory]):
     save_linear = False
     save_HDR = False
     pass_linear = True
+    fix_artifacts = False
     pass_results = True
 
     for path in paths:
@@ -123,7 +145,8 @@ def large_linearity_analysis(paths: Optional[List[str]] = [data_directory]):
                                               save_HDR=save_HDR,
                                               save_8bit=save_8bit,
                                               save_32bit=save_32bit,
-                                              pass_linear=pass_linear)
+                                              pass_linear=pass_linear,
+                                              fix_artifacts=fix_artifacts)
 
         sub_results = ia.analyze_linearity(acq_path,
                                            sublists_of_imageSets=acq_sublists,
@@ -134,6 +157,7 @@ def large_linearity_analysis(paths: Optional[List[str]] = [data_directory]):
     with open(os.path.join(out_path, 'large_linearity_results.txt'), 'w') as f:
         for row in linearity_results:
             f.write(f'{row}\n')
+        f.close()
 
     return
 
@@ -144,14 +168,15 @@ def main():
                   r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal']
     # mdc.collect_mean_data()
     # process_base_data()
-    # calibrate_ICRF()
+    calibrate_ICRF()
+    # calibrate_ICRF_e()
     # process_mdl()
     # image_correction.image_correction(save_to_file=True)
-    process_HDR()
+    # process_HDR()
     # image_calculation.calibrate_dark_frames()
     # image_calculation.calibrate_flats()
-    ia.analyze_linearity(out_path)
-    # ia.analyze_linearity(acq_path)
+    # ia.analyze_linearity(out_path, original_std=False)
+    # ia.analyze_linearity(acq_path, original_std=True)
     # large_linearity_analysis(data_paths)
 
 

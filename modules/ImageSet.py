@@ -47,11 +47,16 @@ class ImageSet(object):
 
         self.acq = cv.imread(os.path.join(self.path, self.file_name)).astype(np.float32) / max_DN
 
-    def load_std(self):
+    def load_std(self, is_original: Optional[bool] = True):
 
         try:
-            self.std = cv.imread(os.path.join(self.path, self.file_name.removesuffix(
-                '.tif') + ' STD.tif')).astype(np.float32) / (max_DN * math.sqrt(67))
+            if is_original:
+                self.std = cv.imread(os.path.join(self.path, self.file_name.removesuffix(
+                    '.tif') + ' STD.tif')).astype(np.float32) / (max_DN * math.sqrt(67))
+            else:
+                self.std = cv.imread(
+                    os.path.join(self.path, self.file_name.removesuffix(
+                        '.tif') + ' STD.tif')).astype(np.float32) / max_DN
         except FileNotFoundError:
             self.std = calculate_numerical_STD((self.acq * max_DN).astype(np.dtype('uint8')))
         except AttributeError:

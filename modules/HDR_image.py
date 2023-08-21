@@ -14,8 +14,8 @@ flat_path = rd.read_config_single('flat fields path')
 dark_path = rd.read_config_single('dark frames path')
 out_path = rd.read_config_single('corrected output path')
 ICRF_calibrated_file = rd.read_config_single('calibrated ICRFs')
-ICRF = rd.read_data_from_txt(ICRF_calibrated_file)
-ICRF_diff = np.zeros_like(ICRF)
+ICRF = None
+ICRF_diff = None
 channels = rd.read_config_single('channels')
 bit_depth = rd.read_config_single('bit depth')
 bits = 2**bit_depth
@@ -89,16 +89,19 @@ def create_HDR_absolute(list_of_ImageSets: List[ImageSet]):
 
 def linearize_image_vectorized(imageSet):
 
+    global ICRF
+    global ICRF_diff
+
     acq = (imageSet.acq * max_DN).astype(int)
-    acq_new = np.zeros(np.shape(acq), dtype=float)
-    std_new = np.zeros(np.shape(acq), dtype=float)
+    acq_new = np.zeros(np.shape(acq), dtype=np.dtype('float32'))
+    std_new = np.zeros(np.shape(acq), dtype=np.dtype('float32'))
     for c in range(channels):
 
         # The ICRFs are in reverse order in the .txt file when compared
         # to how OpenCV opens the channels.
-        acq_new[:, :, c] = ICRF[acq[:, :, c], channels-1-c]
-        std_new[:, :, c] = ICRF_diff[acq[:, :, c], channels-1-c] * \
-            STD_arr[acq[:, :, c], channels-1-c]
+        acq_new[:, :, c] = ICRF[acq[:, :, c], c]
+        std_new[:, :, c] = ICRF_diff[acq[:, :, c], c] * \
+            STD_arr[acq[:, :, c], c]
 
     imageSet.acq = acq_new
     imageSet.std = std_new
@@ -111,10 +114,20 @@ def process_HDR_images(acq_path: Optional[str] = default_acq_path,
                        save_HDR: Optional[bool] = True,
                        save_8bit: Optional[bool] = True,
                        save_32bit: Optional[bool] = False,
-                       pass_linear: Optional[bool] = False):
+                       pass_linear: Optional[bool] = False,
+                       fix_artifacts: Optional[bool] = True,
+                       ICRF_arr: Optional[np.ndarray] = None):
 
     # Determine the numerical derivative of the calibrated ICRFs.
     global ICRF_diff
+    global ICRF
+
+    if ICRF_arr is None:
+        ICRF = rd.read_data_from_txt(ICRF_calibrated_file)
+    else:
+        ICRF = ICRF_arr
+
+    ICRF_diff = np.zeros_like(ICRF)
     dx = 1/(bits-1)
     for c in range(channels):
 
@@ -125,21 +138,27 @@ def process_HDR_images(acq_path: Optional[str] = default_acq_path,
     acq_sublists = gf.separate_to_sublists(acq_list)
     del acq_list
 
-    flat_list = IS.create_imageSets(flat_path)
-    for flatSet in flat_list:
-        flatSet.load_acq()
-        flatSet.load_std()
+    if fix_artifacts:
+        flat_list = IS.create_imageSets(flat_path)
+        for flatSet in flat_list:
+            flatSet.load_acq()
+            flatSet.load_std()
 
-    dark_list = IS.create_imageSets(dark_path)
-    for darkSet in dark_list:
-        darkSet.load_acq()
-        darkSet.load_std()
+        dark_list = IS.create_imageSets(dark_path)
+        for darkSet in dark_list:
+            darkSet.load_acq()
+            darkSet.load_std()
 
     for sublist in acq_sublists:
 
-        sublist = ic.image_correction(sublist, dark_list, flat_list)
+        if fix_artifacts:
+            sublist = ic.image_correction(sublist, dark_list, flat_list)
 
         for imageSet in sublist:
+
+            if not fix_artifacts:
+                imageSet.load_acq()
+                imageSet.load_std()
 
             imageSet = linearize_image_vectorized(imageSet)
             if save_linear:
@@ -148,8 +167,9 @@ def process_HDR_images(acq_path: Optional[str] = default_acq_path,
                 if save_32bit:
                     IS.save_image_32bit(imageSet, out_path)
 
-    del flat_list
-    del dark_list
+    if fix_artifacts:
+        del flat_list
+        del dark_list
 
     if pass_linear:
         return acq_sublists

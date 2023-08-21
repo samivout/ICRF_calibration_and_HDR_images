@@ -1,6 +1,7 @@
 import read_data as rd
 import numpy as np
 import os
+from typing import Optional
 
 current_directory = os.path.dirname(__file__)
 data_directory = os.path.join(os.path.dirname(current_directory), 'data')
@@ -11,7 +12,7 @@ ICRF_files = rd.read_config_list('ICRFs')
 mean_ICRF_files = rd.read_config_list('mean ICRFs')
 
 
-def _read_dorf_data(file_name):
+def _read_dorf_data(file_name, include_gamma):
     """ Load numerical data from a .txt file of the given name from the data
     directory. The dorfCurves.txt contains measured irradiance vs. digital
     number data for various cameras. In this function all the data is read in
@@ -46,9 +47,14 @@ def _read_dorf_data(file_name):
                     is_blue = True
                     continue
                 else:
-                    is_red = True
-                    is_green = True
-                    is_blue = True
+                    if not include_gamma:
+                        is_red = False
+                        is_green = False
+                        is_blue = False
+                    else:
+                        is_red = True
+                        is_green = True
+                        is_blue = True
 
             if number_of_lines % 6 == 0:
                 line_to_arr = np.fromstring(text, dtype=float, sep=' ')
@@ -69,7 +75,7 @@ def _read_dorf_data(file_name):
     green_curves = np.delete(green_curves, 0, 0)
     blue_curves = np.delete(blue_curves, 0, 0)
 
-    list_of_curves = [red_curves, green_curves, blue_curves]
+    list_of_curves = [blue_curves, green_curves, red_curves]
 
     return list_of_curves
 
@@ -134,12 +140,15 @@ def _calculate_mean_curve(list_of_curves):
     return list_of_curves
 
 
-def process_CRF_data():
+def process_CRF_data(include_gamma: Optional[bool] = False):
     """ Main function to be called outside the module, used to run the process
     of obtaining the CRFs from dorfCurves.txt, invert them and determine a mean
     ICRF, for each color channel separately.
+    Args:
+        include_gamma: bool whether to include non-color-specific response
+            functions in the data. Defaults to False.
     """
-    list_of_curves = _read_dorf_data(dorf_file)
+    list_of_curves = _read_dorf_data(dorf_file, include_gamma)
     processed_curves = _invert_and_interpolate_data(list_of_curves, final_datapoints)
     list_of_mean_curves = processed_curves.copy()
     list_of_mean_curves = _calculate_mean_curve(list_of_mean_curves)

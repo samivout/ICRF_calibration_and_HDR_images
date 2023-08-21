@@ -4,6 +4,7 @@ import math
 import read_data as rd
 from scipy.optimize import differential_evolution
 import os
+from typing import Optional
 
 current_directory = os.path.dirname(__file__)
 output_directory = os.path.join(os.path.dirname(current_directory), 'output')
@@ -212,8 +213,14 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
     global ICRF
 
     ICRF = _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params)
+    ICRF[:] += 1 - ICRF[-1]
+    ICRF[0] = 0
     lower_ignore = 2
     upper_ignore = 2
+
+    if np.max(ICRF) > 1 or np.min(ICRF) < 0:
+        energy = np.inf
+        return energy
 
     for i in range(min_DN + lower_ignore, bits - upper_ignore):
         energy += _skewness_evaluation(edge_distances[i, :, :], ICRF)
@@ -240,11 +247,13 @@ def interpolate_ICRF(ICRF_array):
     return interpolated_ICRF
 
 
-def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
+def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
+                initial_function: Optional[np.ndarray] = None):
     """ The main function running the ICRF calibration process that is called
     from outside the module.
 
        Args:
+           initial_function: base function from which iteration starts.
            initial_guess: initial guess for the values of the PCA coefficients
                 subject to optimization.
            evaluation_heights: the number of heights at which the datapoint
@@ -260,10 +269,7 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
             final_energy_array: a Numpy float array containing the final
                 energies of each channel.
        """
-    mean_data_array = np.zeros((bits, datapoints, channels), dtype=int)
-    PCA_array = np.zeros((datapoints, num_of_PCA_params, channels), dtype=float)
     ICRF_array = np.zeros((datapoints, channels), dtype=float)
-    mean_ICRF_array = np.zeros((datapoints, channels), dtype=float)
     final_energy_array = np.zeros(channels, dtype=float)
     initial_energy_array = np.zeros(channels, dtype=float)
 
@@ -279,35 +285,35 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit):
 
         # Load mean data, principal component data and mean ICRF data into
         # numpy arrays.
-        mean_data_array[:, :, i] = rd.read_data_from_txt(mean_file_name)
-        PCA_array[:, :, i] = rd.read_data_from_txt(PCA_file_name)
-        mean_ICRF_array[:, i] = rd.read_data_from_txt(mean_ICRF_file_name)
+        mean_data_array = rd.read_data_from_txt(mean_file_name)
+        PCA_array = rd.read_data_from_txt(PCA_file_name)
+        if initial_function is None:
+            mean_ICRF_array = rd.read_data_from_txt(mean_ICRF_file_name)
+        else:
+            mean_ICRF_array = initial_function
 
-        # mean_ICRF_array[:, i] = np.linspace(0, 1, datapoints)
-        # mean_ICRF_array[:, i] = mean_ICRF_array[:, i]**4
-
-        edge_distances = _process_datapoint_distances(mean_data_array[:, :, i],
+        edge_distances = _process_datapoint_distances(mean_data_array,
                                                       evaluation_heights)
 
-        initialEnergy = _energy_function(initial_guess, mean_ICRF_array[:, i],
-                                         PCA_array[:, :, i], evaluation_heights,
+        initialEnergy = _energy_function(initial_guess, mean_ICRF_array,
+                                         PCA_array, evaluation_heights,
                                          edge_distances)
         initial_energy_array[i] = initialEnergy
         print(initialEnergy)
 
         result = differential_evolution(_energy_function, limits, args=(
-            mean_ICRF_array[:, i], PCA_array[:, :, i],
-            evaluation_heights, edge_distances), strategy='best1bin', disp=False)
+            mean_ICRF_array, PCA_array, evaluation_heights, edge_distances),
+                                        strategy='best1bin', disp=False,
+                                        maxiter=1000)
 
         print('Status : %s' % result['message'])
         print('Total Evaluations: %d' % result['nfev'])
         solution = result['x']
-        evaluation = _energy_function(solution, mean_ICRF_array[:, i],
-                                      PCA_array[:, :, i], evaluation_heights,
-                                      edge_distances)
+        evaluation = _energy_function(solution, mean_ICRF_array, PCA_array,
+                                      evaluation_heights, edge_distances)
         final_energy_array[i] = evaluation
         print('Solution: f(%s) = %.5f' % (solution, evaluation))
-
+        
         ICRF_array[:, i] = ICRF
 
     ICRF_array[:, 0] += 1 - ICRF_array[-1, 0]
