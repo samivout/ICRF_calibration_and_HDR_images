@@ -1,24 +1,14 @@
 import ImageSet as IS
+import general_functions
 from ImageSet import ImageSet
 import numpy as np
-import read_data as rd
 import cv2 as cv
 import math
 from numba import jit, prange
-import copy
 from typing import List
 from typing import Optional
-
-im_size_x = rd.read_config_single('image size x')
-im_size_y = rd.read_config_single('image size y')
-acq_path = rd.read_config_single('acquired images path')
-dark_path = rd.read_config_single('dark frames path')
-og_dark_path = rd.read_config_single('original dark frames path')
-flat_path = rd.read_config_single('flat fields path')
-og_flat_path = rd.read_config_single('original flat fields path')
-out_path = rd.read_config_single('corrected output path')
-dark_threshold = rd.read_config_single('dark threshold')
-channels = rd.read_config_single('channels')
+import general_functions as gf
+from global_settings import *
 
 
 def dark_correction(imageSet: ImageSet, darkSet_list: List[ImageSet]):
@@ -32,7 +22,7 @@ def dark_correction(imageSet: ImageSet, darkSet_list: List[ImageSet]):
     bias = darkSet_list[0]
     imageSet.acq = imageSet.acq - bias.acq
 
-    if imageSet.exp >= dark_threshold:
+    if imageSet.exp >= DARK_THRESHOLD:
         lesser_exp = False
         greater_exp = False
         lesser_index = 0
@@ -53,28 +43,13 @@ def dark_correction(imageSet: ImageSet, darkSet_list: List[ImageSet]):
                 break
 
             if lesser_exp is True and greater_exp is True:
-                interpolated_darkSet = interpolate_frames(
+                interpolated_darkSet = gf.interpolate_frames(
                     darkSet_list[lesser_index], darkSet_list[greater_index],
                     imageSet.exp)
                 imageSet = bad_pixel_filter(imageSet, interpolated_darkSet)
                 break
 
     return imageSet
-
-
-def interpolate_frames(x0, x1, exp):
-    """
-    Simple linear interpolation of two frames by exposure time.
-    :param x0: Lower exposure ImageSet object.
-    :param x1: Higher exposure ImageSet object.
-    :param exp: exposure time at which to perform the interpolation.
-    :return: Interpolated ImageSet.
-    """
-    interpolated_imageSet = copy.deepcopy(x0)
-    interpolated_imageSet.acq = (x0.acq * (x1.exp - exp) + x1.acq * (
-            exp - x0.exp)) / (x1.exp - x0.exp)
-
-    return interpolated_imageSet
 
 
 def bad_pixel_filter(imageSet: ImageSet, darkSet: ImageSet):
@@ -89,9 +64,9 @@ def bad_pixel_filter(imageSet: ImageSet, darkSet: ImageSet):
 
     @jit(nopython=True, parallel=True)
     def the_loop(acq, dark):
-        for c in prange(channels):
-            for i in range(im_size_y):
-                for j in range(im_size_x):
+        for c in prange(CHANNELS):
+            for i in range(IM_SIZE_Y):
+                for j in range(IM_SIZE_X):
 
                     if dark[i, j, c] > 0.02:
                         acq[i, j, c] = convolved_image[i, j, c]
@@ -139,15 +114,15 @@ def flat_field_mean(flatSet, flag):
     :param flag: binary flag, 0 for acquired image, 1 for STD image.
     :return: list of mean image brightness inside ROI for each channel.
     """
-    flat_field = np.zeros((im_size_x, im_size_y), dtype=float)
+    flat_field = np.zeros((IM_SIZE_X, IM_SIZE_Y), dtype=float)
     if flag == 0:
         flat_field = flatSet.acq
     if flag == 1:
         flat_field = flatSet.std
 
     # Define ROI for calculating flat field spatial mean
-    ROI_dx = math.floor(im_size_x * 0.047)
-    ROI_dy = math.floor(im_size_y * 0.047)
+    ROI_dx = math.floor(IM_SIZE_X * 0.047)
+    ROI_dy = math.floor(IM_SIZE_Y * 0.047)
 
     red_mean = np.mean(
         flat_field[10 * ROI_dx:11 * ROI_dx, 10 * ROI_dy:11 * ROI_dy, 2])
@@ -233,9 +208,9 @@ def calibrate_flats():
     Function to calibrate flat frames, i.e. bias subtraction.
     :return:
     """
-    darkList = IS.create_imageSets(dark_path)
+    darkList = gf.create_imageSets(DARK_PATH)
     darkList.sort(key=lambda darkSet: darkSet.exp)
-    og_flatList = IS.create_imageSets(og_flat_path)
+    og_flatList = gf.create_imageSets(OG_FLAT_PATH)
 
     bias = darkList[0]
     bias.load_acq()
@@ -248,7 +223,7 @@ def calibrate_flats():
         flatSet.acq = flatSet.acq - bias.acq
         flatSet.std = np.sqrt(flatSet.std ** 2 + bias.std ** 2)
 
-        IS.save_image_8bit(flatSet, flat_path)
+        gf.save_image_8bit(flatSet, FLAT_PATH)
 
 
 def calibrate_dark_frames():
@@ -256,7 +231,7 @@ def calibrate_dark_frames():
     Function that handles calibration of raw dark frames, i.e. bias subtraction.
     :return:
     """
-    og_darkList = IS.create_imageSets(og_dark_path)
+    og_darkList = gf.create_imageSets(OG_DARK_PATH)
     og_darkList.sort(key=lambda darkSet: darkSet.exp)
     bias = og_darkList[0]
     bias.load_acq()
@@ -269,7 +244,7 @@ def calibrate_dark_frames():
         og_darkList[i].acq = og_darkList[i].acq - bias.acq
 
         og_darkList[i].std = np.sqrt(og_darkList[i].std ** 2 + bias.std ** 2)
-        IS.save_image_8bit(og_darkList[i], dark_path)
+        gf.save_image_8bit(og_darkList[i], DARK_PATH)
 
 
 def image_correction(acq_list: Optional[List[ImageSet]] = None,
@@ -286,17 +261,17 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
     """
     # Initialize image lists and name lists
     if acq_list is None:
-        acq_list = IS.create_imageSets(acq_path)
+        acq_list = gf.create_imageSets(ACQ_PATH)
 
     if dark_list is None:
-        dark_list = IS.create_imageSets(dark_path)
+        dark_list = gf.create_imageSets(DARK_PATH)
     dark_list.sort(key=lambda darkSet: darkSet.exp)
     for darkSet in dark_list:
         darkSet.load_acq()
         darkSet.load_std()
 
     if flat_list is None:
-        flat_list = IS.create_imageSets(flat_path)
+        flat_list = gf.create_imageSets(FLAT_PATH)
     for flatSet in flat_list:
         flatSet.load_acq()
         flatSet.load_std()
@@ -316,7 +291,7 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
 
         # Save the corrected images
         if save_to_file:
-            IS.save_image_8bit(acqSet, out_path)
+            gf.save_image_8bit(acqSet, OUT_PATH)
             acqSet.acq = None
             acqSet.std = None
 

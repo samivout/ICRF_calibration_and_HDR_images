@@ -1,19 +1,6 @@
-import read_data as rd
 import numpy as np
 import cv2 as cv
-import os
-
-current_directory = os.path.dirname(__file__)
-data_directory = os.path.join(os.path.dirname(current_directory), 'data')
-video_path = rd.read_config_single('video path')
-im_size_x = rd.read_config_single('image size x')  # Columns of pixels
-im_size_y = rd.read_config_single('image size y')  # Rows of pixels
-mean_data_files = rd.read_config_list('camera mean data')
-bit_depth = rd.read_config_single('bit depth')
-bits = 2 ** bit_depth
-max_DN = bits-1
-min_DN = 0
-channels = rd.read_config_single('channels')
+from global_settings import *
 
 
 def _process_videos(path):
@@ -28,7 +15,7 @@ def _process_videos(path):
     contains the histogram of the pixels whose mean signal is zero. The array is
     shaped as 256*256*3 for 8 bit RGB images for example.
     """
-    data_array = np.zeros((bits, bits, channels), dtype=int)
+    data_array = np.zeros((BITS, BITS, CHANNELS), dtype=int)
     files = os.listdir(path)
 
     for file in files:
@@ -89,7 +76,7 @@ def _separate_channels(images):
 
     for n in range(1, len(images)):
         image = images[n]
-        for c in range(channels):
+        for c in range(CHANNELS):
             imCh = image[:, :, c, np.newaxis]
             if c == 0:
                 blue_arr = np.append(blue_arr, imCh, axis=2)
@@ -114,15 +101,15 @@ def _calculate_mean_data(separated_channels_list):
     :return: the calculated bits*bits*channels shaped mean data array.
     """
 
-    data_array = np.zeros((bits, bits, channels), dtype=int)
-    weight = np.linspace(min_DN, max_DN, num=bits)
+    data_array = np.zeros((BITS, BITS, CHANNELS), dtype=int)
+    weight = np.linspace(MIN_DN, MAX_DN, num=BITS)
 
     for index, channel in enumerate(separated_channels_list):
-        for row in range(im_size_y):
-            for col in range(im_size_x):
+        for row in range(IM_SIZE_Y):
+            for col in range(IM_SIZE_X):
 
                 hist = np.histogram(
-                    channel[row, col, :], bits, (min_DN, max_DN))[0]
+                    channel[row, col, :], BITS, (MIN_DN, MAX_DN))[0]
 
                 # row = round(np.sum(np.multiply(hist, weight)) / np.sum(hist))
                 row = np.argmax(hist)
@@ -139,14 +126,14 @@ def collect_mean_data():
     :return:
     """
 
-    data_array = _process_videos(video_path)
-    for index, file_name in enumerate(mean_data_files):
+    data_array = _process_videos(VIDEO_PATH)
+    for index, file_name in enumerate(MEAN_DATA_FILES):
 
         np.savetxt(file_name, data_array[:, :, index], fmt='%i')
 
 
 if __name__ == "__main__":
 
-    data_matrix = _process_videos(video_path)
-    for i, file in enumerate(mean_data_files):
+    data_matrix = _process_videos(VIDEO_PATH)
+    for i, file in enumerate(MEAN_DATA_FILES):
         np.savetxt(file, data_matrix[:, :, i], fmt='%i')

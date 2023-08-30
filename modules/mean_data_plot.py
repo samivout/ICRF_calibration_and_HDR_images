@@ -1,22 +1,8 @@
 import numpy as np
-import os
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
-import read_data as rd
 import seaborn as sns
-
-current_directory = os.path.dirname(__file__)
-output_directory = os.path.join(os.path.dirname(current_directory), 'output')
-datapoints = rd.read_config_single('final datapoints')
-datapoint_multiplier = rd.read_config_single('datapoint multiplier')
-channels = rd.read_config_single('channels')
-bit_depth = rd.read_config_single('bit depth')
-max_DN = 2**bit_depth
-min_DN = 0
-mean_data_files = rd.read_config_list('camera mean data')
-mean_ICRF_files = rd.read_config_list('mean ICRFs')
-
-cwd = os.getcwd()
+from global_settings import *
 
 '''
 Load numerical data from a .txt file of the given path into a numpy array as float data type
@@ -31,13 +17,13 @@ def readData(path):
 
 def plot_noise_profiles_3d(mean_data_arr):
 
-    data_step = int(datapoints / max_DN)
+    data_step = int(DATAPOINTS / MAX_DN)
     x0 = 0
     x1 = 255
     y0 = 0
     y1 = 255
 
-    for c in range(channels):
+    for c in range(CHANNELS):
 
         mean_data_channel = mean_data_arr[:, :, c]
         x = np.linspace(0, 1, num=256)
@@ -56,7 +42,7 @@ def plot_noise_profiles_3d(mean_data_arr):
         ax.plot_surface(X, Y, data_to_plot, rstride=1, cstride=1, cmap='viridis',
                         edgecolor='none')
         ax.view_init(45, -30)
-        plt.savefig(os.path.join(output_directory, f'3d_Profiles{c}.png'))
+        plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'3d_Profiles{c}.png'))
         plt.clf()
 
     return
@@ -73,10 +59,10 @@ def plot_noise_profiles_2d(mean_data_array):
     else:
         row_step = int(bound_diff/number_of_profiles)
 
-    sampled_mean_data = mean_data_array[lower_bound:upper_bound:row_step, ::datapoint_multiplier, :]
-    x_range = np.linspace(0, 255, max_DN)
+    sampled_mean_data = mean_data_array[lower_bound:upper_bound:row_step, ::DATAPOINT_MULTIPLIER, :]
+    x_range = np.linspace(0, 255, MAX_DN)
 
-    for c in range(channels):
+    for c in range(CHANNELS):
 
         normalized_data = normalize_rows_by_sum(sampled_mean_data[:, :, c])
 
@@ -91,7 +77,7 @@ def plot_noise_profiles_2d(mean_data_array):
             plt.plot(x_range, normalized_row)
             plt.vlines(mode_index, 0, mode)
 
-        plt.savefig(os.path.join(output_directory, f'Profiles{c}.png'), dpi=300)
+        plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'Profiles{c}.png'), dpi=300)
         plt.clf()
 
     return
@@ -101,9 +87,9 @@ def plot_heatmap(mean_data_array):
 
     mean_data_array = normalize_rows_by_sum(mean_data_array)
 
-    for c in range(channels):
+    for c in range(CHANNELS):
         ax = sns.heatmap(mean_data_array[:, :, c], square=True, norm=LogNorm())
-        plt.savefig(os.path.join(output_directory, f'Heatmap{c}.png'), dpi=700)
+        plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'Heatmap{c}.png'), dpi=700)
         plt.clf()
 
     return
@@ -111,12 +97,12 @@ def plot_heatmap(mean_data_array):
 
 def plot_ICRF(ICRF_array):
 
-    x_range = np.linspace(0, 1, datapoints)
+    x_range = np.linspace(0, 1, DATAPOINTS)
 
     plt.plot(x_range, ICRF_array[:, 0], color='r')
     plt.plot(x_range, ICRF_array[:, 1], color='g')
     plt.plot(x_range, ICRF_array[:, 2], color='b')
-    plt.savefig(os.path.join(output_directory, f'ICRF.png'), dpi=300)
+    plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'ICRF.png'), dpi=300)
     plt.clf()
 
 
@@ -136,28 +122,28 @@ def normalize_rows_by_sum(mean_data_arr):
 
 def print_mean_data_mode(mean_data_array):
 
-    modes = np.zeros((max_DN, channels), dtype=int)
+    modes = np.zeros((MAX_DN, CHANNELS), dtype=int)
 
-    for c in range(channels):
-        for i in range(max_DN):
+    for c in range(CHANNELS):
+        for i in range(MAX_DN):
 
             noise_profile = mean_data_array[i, ::4, c]
             modes[i, c] = np.argmax(noise_profile)
 
-    np.savetxt(os.path.join(output_directory, 'modes.txt'), modes, fmt='%i')
+    np.savetxt(os.path.join(OUTPUT_DIRECTORY, 'modes.txt'), modes, fmt='%i')
 
     return
 
 
 def mean_data_plot():
 
-    mean_data_array = np.zeros((max_DN, datapoints, channels), dtype=int)
-    mean_ICRF_array = np.zeros((datapoints, channels), dtype=float)
+    mean_data_array = np.zeros((MAX_DN, DATAPOINTS, CHANNELS), dtype=int)
+    mean_ICRF_array = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
 
-    for i in range(len(mean_data_files)):
+    for i in range(len(MEAN_DATA_FILES)):
 
-        mean_file_name = mean_data_files[i]
-        mean_ICRF_file_name = mean_ICRF_files[i]
+        mean_file_name = MEAN_DATA_FILES[i]
+        mean_ICRF_file_name = MEAN_ICRF_FILES[i]
 
         mean_data_array[:, :, i] = rd.read_data_from_txt(mean_file_name)
         mean_ICRF_array[:, i] = rd.read_data_from_txt(mean_ICRF_file_name)

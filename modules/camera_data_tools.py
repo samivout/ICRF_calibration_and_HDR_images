@@ -1,26 +1,13 @@
 import numpy as np
-import os
 import math
-import read_data as rd
 from scipy.interpolate import interp1d
 from typing import Optional
-
-current_directory = os.path.dirname(__file__)
-data_directory = os.path.join(os.path.dirname(current_directory), 'data')
-base_data_files = rd.read_config_list('camera base data')
-bit_depth = rd.read_config_single('bit depth')
-datapoints = rd.read_config_single('final datapoints')
-channels = rd.read_config_single('channels')
-bits = 2 ** bit_depth
-max_DN = bits - 1
-min_DN = 0
-mean_data_files = rd.read_config_list('camera mean data')
-cwd = os.getcwd()
+from global_settings import *
 
 
 def clean_data_edges(base_data_arr):
 
-    for i in range(bits):
+    for i in range(BITS):
 
         dist = base_data_arr[i, :]
 
@@ -28,8 +15,8 @@ def clean_data_edges(base_data_arr):
         if m <= 0:
             m = i
 
-        while m > min_DN:
-            if m <= min_DN + 1:
+        while m > MIN_DN:
+            if m <= MIN_DN + 1:
                 break
             if dist[m] == 0 and dist[m - 1] == 0:
                 dist[0:m] = 0
@@ -39,22 +26,22 @@ def clean_data_edges(base_data_arr):
             m -= 1
 
         m = i + 1
-        if m >= bits:
+        if m >= BITS:
             m = i
 
-        while m < bits:
-            if m >= max_DN - 1:
+        while m < BITS:
+            if m >= MAX_DN - 1:
                 break
             if dist[m] == 0 and dist[m + 1] == 0:
-                dist[m: max_DN] = 0
+                dist[m: MAX_DN] = 0
                 break
             if dist[m + 1] >= dist[m] or dist[m - 1] <= dist[m]:
                 dist[m] = math.floor((dist[m + 1] + dist[m - 1]) / 2)
             m += 1
 
-        m = min_DN + 1
+        m = MIN_DN + 1
         while m < i:
-            if m >= max_DN - 1:
+            if m >= MAX_DN - 1:
                 break
             if dist[m] == 0 and dist[m - 1] != 0 and dist[m + 1] != 0:
                 dist[m] = dist[m - 1]
@@ -64,9 +51,9 @@ def clean_data_edges(base_data_arr):
                 m -= 1
             m += 1
 
-        m = max_DN - 1
+        m = MAX_DN - 1
         while m > i:
-            if m <= min_DN + 1:
+            if m <= MIN_DN + 1:
                 break
             if dist[m] == 0 and dist[m - 1] != 0 and dist[m + 1] != 0:
                 dist[m] = dist[m + 1]
@@ -83,19 +70,19 @@ def clean_data_edges(base_data_arr):
 
 def interpolate_data(clean_data_arr):
 
-    if bits == datapoints:
+    if BITS == DATAPOINTS:
         return clean_data_arr
 
-    interpolated_data = np.zeros((bits, datapoints), dtype=float)
+    interpolated_data = np.zeros((BITS, DATAPOINTS), dtype=float)
 
-    for i in range(bits):
+    for i in range(BITS):
 
-        x = np.linspace(0, 1, num=bits)
+        x = np.linspace(0, 1, num=BITS)
         y = clean_data_arr[i, :]
 
         f = interp1d(x, y)
 
-        x_new = np.linspace(0, 1, num=datapoints)
+        x_new = np.linspace(0, 1, num=DATAPOINTS)
         interpolated_data[i, :] = f(x_new)
 
     return interpolated_data
@@ -103,13 +90,13 @@ def interpolate_data(clean_data_arr):
 
 def clean_and_interpolate_data(path: Optional[str] = None):
 
-    base_data_arr = np.zeros((bits, bits, channels), dtype=int)
-    final_data_arr = np.zeros((bits, datapoints, channels), dtype=float)
+    base_data_arr = np.zeros((BITS, BITS, CHANNELS), dtype=int)
+    final_data_arr = np.zeros((BITS, DATAPOINTS, CHANNELS), dtype=float)
 
-    for c in range(channels):
+    for c in range(CHANNELS):
 
-        base_data_name = base_data_files[c]
-        mean_data_name = mean_data_files[c]
+        base_data_name = BASE_DATA_FILES[c]
+        mean_data_name = MEAN_DATA_FILES[c]
 
         if not path:
             base_data_arr[:, :, c] = rd.read_data_from_txt(base_data_name)

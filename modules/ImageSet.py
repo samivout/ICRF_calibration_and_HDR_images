@@ -1,18 +1,8 @@
 import math
-
-import read_data as rd
 import numpy as np
 import cv2 as cv
-import os
-import re
 from typing import Optional
-
-bit_depth = rd.read_config_single('bit depth')
-max_DN = 2**bit_depth-1
-STD_arr = rd.read_data_from_txt(rd.read_config_single('STD data'))
-channels = rd.read_config_single('channels')
-im_size_x = rd.read_config_single('image size x')
-im_size_y = rd.read_config_single('image size y')
+from global_settings import *
 
 '''
 In an arbitrary order the name should contain (exposure time)ms, (illumination
@@ -45,114 +35,33 @@ class ImageSet(object):
 
     def load_acq(self):
 
-        self.acq = cv.imread(os.path.join(self.path, self.file_name)).astype(np.float32) / max_DN
+        self.acq = cv.imread(os.path.join(self.path, self.file_name)).astype(np.float32) / MAX_DN
 
-    def load_std(self, is_original: Optional[bool] = True):
+    def load_std(self, is_original: Optional[bool] = True,
+                 STD_data: Optional[np.ndarray] = None
+                 ):
 
         try:
             if is_original:
                 self.std = cv.imread(os.path.join(self.path, self.file_name.removesuffix(
-                    '.tif') + ' STD.tif')).astype(np.float32) / (max_DN * math.sqrt(67))
+                    '.tif') + ' STD.tif')).astype(np.float32) / (MAX_DN * math.sqrt(67))
             else:
                 self.std = cv.imread(
                     os.path.join(self.path, self.file_name.removesuffix(
-                        '.tif') + ' STD.tif')).astype(np.float32) / max_DN
-        except FileNotFoundError:
-            self.std = calculate_numerical_STD((self.acq * max_DN).astype(np.dtype('uint8')))
-        except AttributeError:
-            self.std = calculate_numerical_STD((self.acq * max_DN).astype(np.dtype('uint8')))
+                        '.tif') + ' STD.tif')).astype(np.float32) / MAX_DN
+        except (FileNotFoundError, AttributeError) as e:
+            self.std = calculate_numerical_STD((self.acq * MAX_DN).astype(np.dtype('uint8')),
+                                               STD_data)
 
 
-def create_imageSets(path):
-    """
-    Load all images of a given path into a list of ImageSet objects but without
-    acq or std images.
+def calculate_numerical_STD(acq: np.ndarray, STD_data: np.ndarray):
 
-    :param path: Absolute path to the directory of images
+    if STD_data is None:
+        STD_data = rd.read_data_from_txt(STD_FILE_NAME)
+    STD_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=(np.dtype('float32')))
 
-    :return: List of ImageSet objects.
-    """
+    for c in range(CHANNELS):
 
-    list_of_ImageSets = []
-    files = os.listdir(path)
-    for file in files:
-        if file.endswith(".tif"):
-            file_name_array = file.removesuffix('.tif').split()
-            if not ("STD" in file_name_array):
-
-                # print(file_name_array)
-                acq = None
-                std = None
-                exp = None
-                ill = None
-                mag = None
-                name = None
-
-                for element in file_name_array:
-                    if element.casefold() == 'bf' or element.casefold() == 'df':
-                        ill = element
-                    elif re.match("^[0-9]+.*[xX]$", element):
-                        mag = element
-                    elif re.match("^[0-9]+.*ms$", element):
-                        exp = float(element.removesuffix('ms'))
-                    else:
-                        name = element
-                imageSet = ImageSet(acq, std, file, exp, mag, ill, name, path)
-                list_of_ImageSets.append(imageSet)
-
-    return list_of_ImageSets
-
-
-def calculate_numerical_STD(acq):
-
-    STD_image = np.zeros((im_size_y, im_size_x, channels), dtype=(np.dtype('float32')))
-
-    for c in range(channels):
-
-        STD_image[:, :, c] = STD_arr[acq[:, :, c], channels - 1 - c]
+        STD_image[:, :, c] = STD_data[acq[:, :, c], CHANNELS - 1 - c]
 
     return STD_image
-
-
-def save_image_8bit(imageSet, path):
-
-    bit8_image = imageSet.acq
-    max_float = np.amax(bit8_image)
-
-    if max_float > 1:
-        bit8_image /= max_float
-
-    bit8_image = (bit8_image*max_DN).astype(np.dtype('uint8'))
-    path_name = os.path.join(path, imageSet.file_name)
-    cv.imwrite(path_name, bit8_image)
-
-    if imageSet.std is not None:
-
-        bit8_image = (imageSet.std*max_DN).astype(np.dtype('uint8'))
-        cv.imwrite(path_name.removesuffix('.tif')+' STD.tif', bit8_image)
-
-    return
-
-
-def save_image_32bit(imageSet, path):
-
-    bit32_image = imageSet.acq
-    path_name = os.path.join(path, imageSet.file_name)
-    cv.imwrite(path_name.removesuffix('.tif')+' blue.tif',
-               bit32_image[:, :, 0])
-    cv.imwrite(path_name.removesuffix('.tif') + ' green.tif',
-               bit32_image[:, :, 1])
-    cv.imwrite(path_name.removesuffix('.tif') + ' red.tif',
-               bit32_image[:, :, 2])
-
-    if imageSet.std is not None:
-
-        bit32_image = imageSet.std
-        cv.imwrite(path_name.removesuffix('.tif') + ' STD blue.tif',
-                   bit32_image[:, :, 0])
-        cv.imwrite(path_name.removesuffix('.tif') + ' STD green.tif',
-                   bit32_image[:, :, 1])
-        cv.imwrite(path_name.removesuffix('.tif') + ' STD red.tif',
-                   bit32_image[:, :, 2])
-
-    return

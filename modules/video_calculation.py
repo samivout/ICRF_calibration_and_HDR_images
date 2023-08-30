@@ -1,25 +1,13 @@
-import read_data as rd
 import numpy as np
 from scipy import stats as st
 import cv2 as cv
-import os
-
-current_directory = os.path.dirname(__file__)
-data_directory = os.path.join(os.path.dirname(current_directory), 'data')
-video_path = rd.read_config_single('video path')
-im_size_x = rd.read_config_single('image size x')  # Columns of pixels
-im_size_y = rd.read_config_single('image size y')  # Rows of pixels
-bit_depth = rd.read_config_single('bit depth')
-bits = 2 ** bit_depth
-max_DN = bits-1
-min_DN = 0
-channels = rd.read_config_single('channels')
+from global_settings import *
 
 
 def calculate_images(path):
-    mean_image = np.zeros((im_size_y, im_size_x, channels), dtype=int)
-    mode_image = np.zeros((im_size_y, im_size_x, channels), dtype=int)
-    median_image = np.zeros((im_size_y, im_size_x, channels), dtype=int)
+    mean_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=int)
+    mode_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=int)
+    median_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=int)
     files = os.listdir(path)
     for file in files:
         if file.endswith(".avi"):
@@ -56,7 +44,7 @@ def calculate_median_image(stacked_array):
 
 def load_video(path, file):
 
-    stacked_array = np.zeros((im_size_y, im_size_x, channels), dtype=np.dtype('uint8'))
+    stacked_array = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=np.dtype('uint8'))
     stacked_array = stacked_array[:, :, :, np.newaxis]
 
     video = cv.VideoCapture(os.path.join(path, file))
@@ -84,15 +72,15 @@ def load_video(path, file):
 
 def process_video():
 
-    mean_image, median_image, mode_image = calculate_images(video_path)
-    cv.imwrite(os.path.join(video_path, 'Mean.tif'), mean_image)
-    cv.imwrite(os.path.join(video_path, 'Median.tif'), median_image)
-    cv.imwrite(os.path.join(video_path, 'Mode.tif'), mode_image)
+    mean_image, median_image, mode_image = calculate_images(VIDEO_PATH)
+    cv.imwrite(os.path.join(VIDEO_PATH, 'Mean.tif'), mean_image)
+    cv.imwrite(os.path.join(VIDEO_PATH, 'Median.tif'), median_image)
+    cv.imwrite(os.path.join(VIDEO_PATH, 'Mode.tif'), mode_image)
 
 
 if __name__ == "__main__":
 
-    mean_image1, median_image1, mode_image1 = calculate_images(video_path)
-    cv.imwrite(os.path.join(video_path, 'Mean.tif'), mean_image1)
-    cv.imwrite(os.path.join(video_path, 'Median.tif'), median_image1)
-    cv.imwrite(os.path.join(video_path, 'Mode.tif'), mode_image1)
+    mean_image1, median_image1, mode_image1 = calculate_images(VIDEO_PATH)
+    cv.imwrite(os.path.join(VIDEO_PATH, 'Mean.tif'), mean_image1)
+    cv.imwrite(os.path.join(VIDEO_PATH, 'Median.tif'), median_image1)
+    cv.imwrite(os.path.join(VIDEO_PATH, 'Mode.tif'), mode_image1)

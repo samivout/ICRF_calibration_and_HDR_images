@@ -1,7 +1,6 @@
 from modules import ICRF_calibration_noise as ICRF
 from modules import principal_component_analysis
 from modules import process_CRF_database
-from modules import read_data as rd
 from modules import image_correction
 from modules import HDR_image as HDR
 from modules import STD_data_calculator as STD
@@ -12,27 +11,11 @@ from modules import mean_data_collector as mdc
 from modules import ICRF_calibration_exposure as ICRF_e
 from typing import Optional
 from typing import List
-import os
 import numpy as np
 import matplotlib.pyplot as plt
+from global_settings import *
 
-current_directory = os.path.dirname(__file__)
-data_directory = os.path.join(current_directory, 'data')
-acq_path = rd.read_config_single('acquired images path')
-out_path = rd.read_config_single('corrected output path')
-output_directory = os.path.join(current_directory, 'output')
-channels = rd.read_config_single('channels')
-datapoints = rd.read_config_single('final datapoints')
-evaluation_heights = rd.read_config_list('evaluation heights')
-number_of_heights = len(evaluation_heights)
-energy_array = np.zeros((number_of_heights, channels*2), dtype=float)
-lower_limit = rd.read_config_single('lower PC coefficient limit')
-upper_limit = rd.read_config_single('upper PC coefficient limit')
-in_guess = rd.read_config_list('initial guess')
-bit_depth = rd.read_config_single('bit depth')
-bits = 2**bit_depth
-max_DN = bits-1
-min_DN = 0
+energy_array = np.zeros((NUMBER_OF_HEIGHTS, CHANNELS * 2), dtype=float)
 
 
 def calibrate_ICRF():
@@ -43,45 +26,45 @@ def calibrate_ICRF():
 
     :return:
     """
-    x_range = np.linspace(0, 1, bits)
-    for index, height in enumerate(evaluation_heights):
+    x_range = np.linspace(0, 1, BITS)
+    for index, height in enumerate(EVALUATION_HEIGHTS):
         ICRF_array, initial_energy_array, final_energy_array = \
-            ICRF.calibration(in_guess, height, lower_limit, upper_limit)
+            ICRF.calibration(IN_PCA_GUESS, height, LOWER_PCA_LIM, UPPER_PCA_LIM)
 
-        energy_array[index, :channels] = initial_energy_array
-        energy_array[index, channels:] = final_energy_array
+        energy_array[index, :CHANNELS] = initial_energy_array
+        energy_array[index, CHANNELS:] = final_energy_array
 
-        np.savetxt(os.path.join(output_directory,
+        np.savetxt(os.path.join(OUTPUT_DIRECTORY,
                                 f'ICRFs{height}.txt'), ICRF_array)
 
         plt.plot(x_range, ICRF_array[:, 0], color='b')
         plt.plot(x_range, ICRF_array[:, 1], color='g')
         plt.plot(x_range, ICRF_array[:, 2], color='r')
-        plt.savefig(os.path.join(output_directory, f'ICRFs{height}.png'), dpi=300)
+        plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'ICRFs{height}.png'), dpi=300)
         plt.clf()
 
-        if height == evaluation_heights[-1]:
+        if height == EVALUATION_HEIGHTS[-1]:
             np.savetxt(os.path.join(data_directory,
                                     f'ICRF_calibrated.txt'), ICRF_array)
 
-    np.savetxt(os.path.join(output_directory, 'EnergyArray.txt'), energy_array)
+    np.savetxt(os.path.join(OUTPUT_DIRECTORY, 'EnergyArray.txt'), energy_array)
 
     return
 
 
 def calibrate_ICRF_e():
 
-    x_range = np.linspace(0, 1, bits)
+    x_range = np.linspace(0, 1, BITS)
     ICRF_array, initial_energy_array, final_energy_array = \
-        ICRF_e.calibration(lower_limit, upper_limit)
+        ICRF_e.calibration(LOWER_PCA_LIM, UPPER_PCA_LIM)
 
-    np.savetxt(os.path.join(output_directory,
+    np.savetxt(os.path.join(OUTPUT_DIRECTORY,
                             f'ICRF_exp.txt'), ICRF_array)
 
     plt.plot(x_range, ICRF_array[:, 0], color='b')
     plt.plot(x_range, ICRF_array[:, 1], color='g')
     plt.plot(x_range, ICRF_array[:, 2], color='r')
-    plt.savefig(os.path.join(output_directory, f'ICRF_exp.png'), dpi=300)
+    plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'ICRF_exp.png'), dpi=300)
     plt.clf()
 
     return
@@ -148,13 +131,13 @@ def large_linearity_analysis_noise(paths: Optional[List[str]] = [data_directory]
                                               pass_linear=pass_linear,
                                               fix_artifacts=fix_artifacts)
 
-        sub_results = ia.analyze_linearity(acq_path,
+        sub_results = ia.analyze_linearity(ACQ_PATH,
                                            sublists_of_imageSets=acq_sublists,
                                            pass_results=pass_results)
         for row in sub_results:
             linearity_results.append(row)
 
-    with open(os.path.join(out_path, 'large_linearity_results.txt'), 'w') as f:
+    with open(os.path.join(OUT_PATH, 'large_linearity_results.txt'), 'w') as f:
         for row in linearity_results:
             f.write(f'{row}\n')
         f.close()

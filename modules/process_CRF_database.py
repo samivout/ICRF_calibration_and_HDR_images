@@ -1,15 +1,6 @@
-import read_data as rd
 import numpy as np
-import os
 from typing import Optional
-
-current_directory = os.path.dirname(__file__)
-data_directory = os.path.join(os.path.dirname(current_directory), 'data')
-dorf_file = rd.read_config_single('source DoRF data')
-dorf_datapoints = rd.read_config_single('original DoRF datapoints')
-final_datapoints = rd.read_config_single('final datapoints')
-ICRF_files = rd.read_config_list('ICRFs')
-mean_ICRF_files = rd.read_config_list('mean ICRFs')
+from global_settings import *
 
 
 def _read_dorf_data(file_name, include_gamma):
@@ -25,9 +16,9 @@ def _read_dorf_data(file_name, include_gamma):
             list of numpy float arrays, one for each color channel.
     """
     file = os.path.join(data_directory, file_name)
-    red_curves = np.zeros((1, dorf_datapoints), dtype=float)
-    blue_curves = np.zeros((1, dorf_datapoints), dtype=float)
-    green_curves = np.zeros((1, dorf_datapoints), dtype=float)
+    red_curves = np.zeros((1, DORF_DATAPOINTS), dtype=float)
+    blue_curves = np.zeros((1, DORF_DATAPOINTS), dtype=float)
+    green_curves = np.zeros((1, DORF_DATAPOINTS), dtype=float)
     number_of_lines = 0
     is_red = False
     is_green = False
@@ -98,7 +89,7 @@ def _invert_and_interpolate_data(list_of_curves, new_datapoints):
                 containing the inverted camera response functions, or ICRFs.
     """
     list_of_processed_curves = []
-    x_old = np.linspace(0, 1, dorf_datapoints)
+    x_old = np.linspace(0, 1, DORF_DATAPOINTS)
     x_new = np.linspace(0, 1, new_datapoints)
 
     for index, arr in enumerate(list_of_curves):
@@ -109,7 +100,7 @@ def _invert_and_interpolate_data(list_of_curves, new_datapoints):
             y = arr[i]
             y_inv = np.interp(x_old, y, x_old)
 
-            if dorf_datapoints != new_datapoints:
+            if DORF_DATAPOINTS != new_datapoints:
 
                 interpolated_row = np.interp(x_new, x_old, y_inv)
                 y_new = np.vstack([y_new, interpolated_row])
@@ -148,29 +139,29 @@ def process_CRF_data(include_gamma: Optional[bool] = False):
         include_gamma: bool whether to include non-color-specific response
             functions in the data. Defaults to False.
     """
-    list_of_curves = _read_dorf_data(dorf_file, include_gamma)
-    processed_curves = _invert_and_interpolate_data(list_of_curves, final_datapoints)
+    list_of_curves = _read_dorf_data(DORF_FILE, include_gamma)
+    processed_curves = _invert_and_interpolate_data(list_of_curves, DATAPOINTS)
     list_of_mean_curves = processed_curves.copy()
     list_of_mean_curves = _calculate_mean_curve(list_of_mean_curves)
 
-    for i in range(len(ICRF_files)):
+    for i in range(len(ICRF_FILES)):
 
-        np.savetxt(os.path.join(data_directory, ICRF_files[i]),
+        np.savetxt(os.path.join(data_directory, ICRF_FILES[i]),
                    processed_curves[i])
-        np.savetxt(os.path.join(data_directory, mean_ICRF_files[i]),
+        np.savetxt(os.path.join(data_directory, MEAN_ICRF_FILES[i]),
                    list_of_mean_curves[i])
 
     return
 
 
 if __name__ == "__main__":
-    test_curves = _read_dorf_data(dorf_file)
-    test_curves = _invert_and_interpolate_data(test_curves, final_datapoints)
+    test_curves = _read_dorf_data(DORF_FILE)
+    test_curves = _invert_and_interpolate_data(test_curves, DATAPOINTS)
     test_mean_curves = test_curves.copy()
     test_mean_curves = _calculate_mean_curve(test_mean_curves)
 
-    for i in range(len(ICRF_files)):
-        np.savetxt(os.path.join(data_directory, ICRF_files[i]),
+    for i in range(len(ICRF_FILES)):
+        np.savetxt(os.path.join(data_directory, ICRF_FILES[i]),
                    test_curves[i])
-        np.savetxt(os.path.join(data_directory, mean_ICRF_files[i]),
+        np.savetxt(os.path.join(data_directory, MEAN_ICRF_FILES[i]),
                    test_mean_curves[i])

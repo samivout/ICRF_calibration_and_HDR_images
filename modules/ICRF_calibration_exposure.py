@@ -1,33 +1,13 @@
 import copy
-
-import matplotlib.pyplot as plt
 import ImageSet as IS
-from ImageSet import ImageSet
 import numpy as np
-import math
-import read_data as rd
-from scipy.optimize import differential_evolution
 from scipy.optimize._differentialevolution import DifferentialEvolutionSolver
-import os
 import general_functions as gf
 from typing import Optional
+from global_settings import *
 
-current_directory = os.path.dirname(__file__)
-output_directory = os.path.join(os.path.dirname(current_directory), 'output')
-datapoints = rd.read_config_single('final datapoints')
-channels = rd.read_config_single('channels')
-bit_depth = rd.read_config_single('bit depth')
-bits = 2 ** bit_depth
-max_DN = bits - 1
-min_DN = 0
-num_of_PCA_params = rd.read_config_single('number of principal components')
-mean_data_files = rd.read_config_list('camera mean data')
-principal_component_files = rd.read_config_list('principal components')
-mean_ICRF_files = rd.read_config_list('mean ICRFs')
-acq_path = rd.read_config_single('acquired images path')
-
-ICRF = np.zeros((datapoints, 1), dtype=float)
-linear_scale = np.linspace(0, 1, datapoints, dtype=float)
+ICRF = np.zeros((DATAPOINTS, 1), dtype=float)
+linear_scale = np.linspace(0, 1, DATAPOINTS, dtype=float)
 
 
 def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
@@ -54,7 +34,7 @@ def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
 
 def linearize_image_vectorized(imageSet, channel):
 
-    acq = (imageSet.acq * max_DN).astype(int)
+    acq = (imageSet.acq * MAX_DN).astype(int)
     acq_new = np.zeros(np.shape(acq), dtype=float)
     # std_new = np.zeros(np.shape(acq), dtype=float)
 
@@ -79,8 +59,8 @@ def analyze_linearity(sublists_of_imageSets, channel):
     Returns:
     """
     results = []
-    lower = 5/max_DN
-    upper = 250/max_DN
+    lower = 5 / MAX_DN
+    upper = 250 / MAX_DN
 
     for sublist in sublists_of_imageSets:
 
@@ -154,31 +134,18 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, acq_sublists, channel):
 
 
 def interpolate_ICRF(ICRF_array):
-    if bits == datapoints:
+    if BITS == DATAPOINTS:
         return ICRF_array
 
-    x_new = np.linspace(0, 1, num=bits)
-    x_old = np.linspace(0, 1, num=datapoints)
-    interpolated_ICRF = np.zeros((bits, channels), dtype=float)
+    x_new = np.linspace(0, 1, num=BITS)
+    x_old = np.linspace(0, 1, num=DATAPOINTS)
+    interpolated_ICRF = np.zeros((BITS, CHANNELS), dtype=float)
 
-    for c in range(channels):
+    for c in range(CHANNELS):
         y_old = ICRF_array[:, c]
         interpolated_ICRF[:, c] = np.interp(x_new, x_old, y_old)
 
     return interpolated_ICRF
-
-
-def choose_evenly_spaced_points(array, num_points):
-    # Convert the 2D array to a numpy array for easier indexing
-    array = np.array(array)
-
-    # Calculate the step size between points
-    step = max(1, int(array.shape[0] / (num_points - 1)))
-
-    # Select the evenly spaced points
-    points = array[::step, ::step]
-
-    return points
 
 
 def calibration(lower_limit, upper_limit,
@@ -203,9 +170,9 @@ def calibration(lower_limit, upper_limit,
             final_energy_array: a Numpy float array containing the final
                 energies of each channel.
        """
-    ICRF_array = np.zeros((datapoints, channels), dtype=float)
-    final_energy_array = np.zeros(channels, dtype=float)
-    initial_energy_array = np.zeros(channels, dtype=float)
+    ICRF_array = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
+    final_energy_array = np.zeros(CHANNELS, dtype=float)
+    initial_energy_array = np.zeros(CHANNELS, dtype=float)
 
     limits = [[lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit], [lower_limit, upper_limit],
@@ -213,19 +180,19 @@ def calibration(lower_limit, upper_limit,
 
     # Initialize image lists and name lists
 
-    acq_list = IS.create_imageSets(acq_path)
+    acq_list = gf.create_imageSets(ACQ_PATH)
     for imageSet in acq_list:
         imageSet.load_acq()
-        imageSet.acq = choose_evenly_spaced_points(imageSet.acq, 30)
+        imageSet.acq = gf.choose_evenly_spaced_points(imageSet.acq, 30)
     acq_sublists = gf.separate_to_sublists(acq_list)
     for sublist in acq_sublists:
         sublist.sort(key=lambda imageSet: imageSet.exp)
     del acq_list
 
-    for i in range(len(mean_data_files)):
+    for i in range(len(MEAN_DATA_FILES)):
         # Get the filenames from the attribute arrays.
-        PCA_file_name = principal_component_files[i]
-        mean_ICRF_file_name = mean_ICRF_files[i]
+        PCA_file_name = PRINCIPAL_COMPONENT_FILES[i]
+        mean_ICRF_file_name = MEAN_ICRF_FILES[i]
 
         # Load mean data, principal component data and mean ICRF data into
         # numpy arrays.

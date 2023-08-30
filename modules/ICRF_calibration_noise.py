@@ -1,30 +1,26 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-import read_data as rd
 from scipy.optimize import differential_evolution
-import os
 from typing import Optional
+from global_settings import *
 
-current_directory = os.path.dirname(__file__)
-output_directory = os.path.join(os.path.dirname(current_directory), 'output')
-datapoints = rd.read_config_single('final datapoints')
-channels = rd.read_config_single('channels')
-bit_depth = rd.read_config_single('bit depth')
-bits = 2 ** bit_depth
-max_DN = bits - 1
-min_DN = 0
-num_of_PCA_params = rd.read_config_single('number of principal components')
-mean_data_files = rd.read_config_list('camera mean data')
-principal_component_files = rd.read_config_list('principal components')
-mean_ICRF_files = rd.read_config_list('mean ICRFs')
-
-ICRF = np.zeros((datapoints, 1), dtype=float)
-linear_scale = np.linspace(0, 1, datapoints, dtype=float)
+ICRF = np.zeros((DATAPOINTS, 1), dtype=float)
+linear_scale = np.linspace(0, 1, DATAPOINTS, dtype=float)
 
 
 def _process_datapoint_distances(mean_data, number_of_heights):
+    """
+    Wrapper function for processing all distributions in the mean data array.
+    Args:
+        mean_data: Numpy array of the camera mean data
+        number_of_heights: number of heights at which to evaluate the edge
+            distances of each distribution.
 
+    Returns: Numpy array containing the edge distances for each distribution.
+        First column is left edge, middle column is mode value and right column
+        is the right edge.
+    """
     number_of_dists = np.shape(mean_data)[0]
     edge_distances = np.zeros((number_of_dists, number_of_heights, 3),
                               dtype=int)
@@ -222,24 +218,31 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
         energy = np.inf
         return energy
 
-    for i in range(min_DN + lower_ignore, bits - upper_ignore):
+    for i in range(MIN_DN + lower_ignore, BITS - upper_ignore):
         energy += _skewness_evaluation(edge_distances[i, :, :], ICRF)
 
-    energy /= (bits - upper_ignore - lower_ignore - min_DN)
+    energy /= (BITS - upper_ignore - lower_ignore - MIN_DN)
 
     return energy
 
 
-def interpolate_ICRF(ICRF_array):
+def interpolate_ICRF(ICRF_array: np.ndarray):
+    """
+    Function for interpolating a different number of datapoints to an ICRF if
+    the config.ini final datapoints differ from the number of bits.
+    Args:
+        ICRF_array: ICRF as numpy array.
 
-    if bits == datapoints:
+    Returns: Interpolated ICRF
+    """
+    if BITS == DATAPOINTS:
         return ICRF_array
 
-    x_new = np.linspace(0, 1, num=bits)
-    x_old = np.linspace(0, 1, num=datapoints)
-    interpolated_ICRF = np.zeros((bits, channels), dtype=float)
+    x_new = np.linspace(0, 1, num=BITS)
+    x_old = np.linspace(0, 1, num=DATAPOINTS)
+    interpolated_ICRF = np.zeros((BITS, CHANNELS), dtype=float)
 
-    for c in range(channels):
+    for c in range(CHANNELS):
 
         y_old = ICRF_array[:, c]
         interpolated_ICRF[:, c] = np.interp(x_new, x_old, y_old)
@@ -269,19 +272,19 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
             final_energy_array: a Numpy float array containing the final
                 energies of each channel.
        """
-    ICRF_array = np.zeros((datapoints, channels), dtype=float)
-    final_energy_array = np.zeros(channels, dtype=float)
-    initial_energy_array = np.zeros(channels, dtype=float)
+    ICRF_array = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
+    final_energy_array = np.zeros(CHANNELS, dtype=float)
+    initial_energy_array = np.zeros(CHANNELS, dtype=float)
 
     limits = [[lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit]]
 
-    for i in range(len(mean_data_files)):
+    for i in range(len(MEAN_DATA_FILES)):
         # Get the filenames from the attribute arrays.
-        mean_file_name = mean_data_files[i]
-        PCA_file_name = principal_component_files[i]
-        mean_ICRF_file_name = mean_ICRF_files[i]
+        mean_file_name = MEAN_DATA_FILES[i]
+        PCA_file_name = PRINCIPAL_COMPONENT_FILES[i]
+        mean_ICRF_file_name = MEAN_ICRF_FILES[i]
 
         # Load mean data, principal component data and mean ICRF data into
         # numpy arrays.
@@ -333,11 +336,11 @@ if __name__ == "__main__":
 
     eval_heights = 10
     number_of_dists = 10
-    data = np.random.normal(128 / max_DN, 0.0246, 10000000)
+    data = np.random.normal(128 / MAX_DN, 0.0246, 10000000)
     hist, bins = np.histogram(data, bins=1024, range=(0, 1))
     number_of_dists -= 1
     for d in range(number_of_dists):
-        data = np.random.normal(128 / max_DN, 0.0246, 10000000)
+        data = np.random.normal(128 / MAX_DN, 0.0246, 10000000)
         new_hist = np.histogram(data, bins=1024, range=(0, 1))[0]
         hist = np.vstack((hist, new_hist))
 

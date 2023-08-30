@@ -1,21 +1,11 @@
-import os
 import numpy as np
-import read_data as rd
 from sklearn.decomposition import PCA
-
-current_directory = os.path.dirname(__file__)
-data_directory = os.path.join(os.path.dirname(current_directory), 'data')
-ICRF_files = rd.read_config_list('ICRFs')
-number_of_ICRFs = np.shape(ICRF_files)[0]
-mean_ICRF_files = rd.read_config_list('mean ICRFs')
-PCA_files = rd.read_config_list('principal components')
-number_of_components = rd.read_config_single('number of principal components')
-datapoints = rd.read_config_single('final datapoints')
+from global_settings import *
 
 
 def _calculate_principal_components(covariance_array):
 
-    PCA_array = PCA(n_components=number_of_components)
+    PCA_array = PCA(n_components=NUM_OF_PCA_PARAMS)
     PCA_array.fit(covariance_array)
     result = PCA_array.transform(covariance_array)
 
@@ -36,14 +26,14 @@ def _calculate_covariance_matrix(data_array, mean_data_array):
         Return:
             the covariance matrix calculated for the given data.
     """
-    covariance_array = np.zeros((datapoints, datapoints), dtype=float)
+    covariance_array = np.zeros((DATAPOINTS, DATAPOINTS), dtype=float)
 
-    for i in range(datapoints):
-        for j in range(datapoints):
+    for i in range(DATAPOINTS):
+        for j in range(DATAPOINTS):
 
             running_sum = 0
 
-            for k in range(number_of_ICRFs + 1):
+            for k in range(CHANNELS + 1):
 
                 running_sum += (data_array[k, i] - mean_data_array[i]) * (
                         data_array[k, j] - mean_data_array[j])
@@ -60,10 +50,10 @@ def analyze_principal_components():
     of obtaining principal components for the ICRF data for each channel
     separately.
     """
-    for i in range(len(ICRF_files)):
+    for i in range(len(ICRF_FILES)):
 
-        file_name = ICRF_files[i]
-        mean_file_name = mean_ICRF_files[i]
+        file_name = ICRF_FILES[i]
+        mean_file_name = MEAN_ICRF_FILES[i]
         ICRF_array = rd.read_data_from_txt(file_name)
         mean_ICRF_array = rd.read_data_from_txt(mean_file_name)
 
@@ -72,15 +62,15 @@ def analyze_principal_components():
 
         PCA_array = _calculate_principal_components(covariance_matrix)
 
-        np.savetxt(os.path.join(data_directory, PCA_files[i]), PCA_array)
+        np.savetxt(os.path.join(data_directory, PRINCIPAL_COMPONENT_FILES[i]), PCA_array)
 
     return
 
 
 if __name__ == "__main__":
 
-    test_file_name = ICRF_files[0]
-    test_mean_file_name = mean_ICRF_files[0]
+    test_file_name = ICRF_FILES[0]
+    test_mean_file_name = MEAN_ICRF_FILES[0]
     test_inverse_curve = rd.read_data_from_txt(test_file_name)
     test_mean_inverse_curve = rd.read_data_from_txt(test_mean_file_name)
 
