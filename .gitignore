@@ -7,7 +7,6 @@
 /modules/__pycache__/
 /output/
 /.idea
-/Pipfile.lock
 
 *.xml
 *.iml
