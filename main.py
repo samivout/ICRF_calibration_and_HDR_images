@@ -34,20 +34,18 @@ def calibrate_ICRF():
         energy_array[index, :CHANNELS] = initial_energy_array
         energy_array[index, CHANNELS:] = final_energy_array
 
-        np.savetxt(os.path.join(OUTPUT_DIRECTORY,
-                                f'ICRFs{height}.txt'), ICRF_array)
+        np.savetxt(OUTPUT_DIRECTORY.joinpath(f'ICRFs{height}.txt'), ICRF_array)
 
         plt.plot(x_range, ICRF_array[:, 0], color='b')
         plt.plot(x_range, ICRF_array[:, 1], color='g')
         plt.plot(x_range, ICRF_array[:, 2], color='r')
-        plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'ICRFs{height}.png'), dpi=300)
+        plt.savefig(OUTPUT_DIRECTORY.joinpath(f'ICRFs{height}.png'), dpi=300)
         plt.clf()
 
         if height == EVALUATION_HEIGHTS[-1]:
-            np.savetxt(os.path.join(data_directory,
-                                    f'ICRF_calibrated.txt'), ICRF_array)
+            np.savetxt(data_directory.joinpath(f'ICRF_calibrated.txt'), ICRF_array)
 
-    np.savetxt(os.path.join(OUTPUT_DIRECTORY, 'EnergyArray.txt'), energy_array)
+    np.savetxt(OUTPUT_DIRECTORY.joinpath('EnergyArray.txt'), energy_array)
 
     return
 
@@ -58,13 +56,12 @@ def calibrate_ICRF_e():
     ICRF_array, initial_energy_array, final_energy_array = \
         ICRF_e.calibration(LOWER_PCA_LIM, UPPER_PCA_LIM)
 
-    np.savetxt(os.path.join(OUTPUT_DIRECTORY,
-                            f'ICRF_exp.txt'), ICRF_array)
+    np.savetxt(OUTPUT_DIRECTORY.joinpath(f'ICRF_exp.txt'), ICRF_array)
 
     plt.plot(x_range, ICRF_array[:, 0], color='b')
     plt.plot(x_range, ICRF_array[:, 1], color='g')
     plt.plot(x_range, ICRF_array[:, 2], color='r')
-    plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'ICRF_exp.png'), dpi=300)
+    plt.savefig(OUTPUT_DIRECTORY.joinpath(f'ICRF_exp.png'), dpi=300)
     plt.clf()
 
     return
@@ -77,11 +74,11 @@ def process_mdl():
     return
 
 
-def process_base_data(path: Optional[str] = None):
+def process_base_data(path: Optional[str] = None, include_gamma: Optional[bool] = False):
 
     cdt.clean_and_interpolate_data(path)
-    STD.process_STD_data()
-    process_CRF_database.process_CRF_data()
+    STD.process_STD_data(pass_result=False)
+    process_CRF_database.process_CRF_data(include_gamma)
     principal_component_analysis.analyze_principal_components()
 
     return
@@ -137,7 +134,7 @@ def large_linearity_analysis_noise(paths: Optional[List[str]] = [data_directory]
         for row in sub_results:
             linearity_results.append(row)
 
-    with open(os.path.join(OUT_PATH, 'large_linearity_results.txt'), 'w') as f:
+    with open(OUT_PATH.joinpath('large_linearity_results.txt'), 'w') as f:
         for row in linearity_results:
             f.write(f'{row}\n')
         f.close()
@@ -150,16 +147,16 @@ def main():
     data_paths = [r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Mean',
                   r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal']
     # mdc.collect_mean_data()
-    # process_base_data()
-    calibrate_ICRF()
+    # process_base_data(data_paths[0])
+    # calibrate_ICRF()
     # calibrate_ICRF_e()
     # process_mdl()
     # image_correction.image_correction(save_to_file=True)
     # process_HDR()
     # image_calculation.calibrate_dark_frames()
     # image_calculation.calibrate_flats()
-    # ia.analyze_linearity(out_path, original_std=False)
-    # ia.analyze_linearity(acq_path, original_std=True)
+    ia.analyze_linearity(OUT_PATH, use_std=True, absolute_result=False, use_relative=False)
+    # ia.analyze_linearity(ACQ_PATH, use_std=True, absolute_result=False, use_relative=False)
     # large_linearity_analysis(data_paths)
 
 

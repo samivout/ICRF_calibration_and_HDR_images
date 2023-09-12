@@ -3,19 +3,18 @@ from typing import Optional
 from global_settings import *
 
 
-def _read_dorf_data(file_name, include_gamma):
+def _read_dorf_data(file_path: Path, include_gamma: bool):
     """ Load numerical data from a .txt file of the given name from the data
     directory. The dorfCurves.txt contains measured irradiance vs. digital
     number data for various cameras. In this function all the data is read in
     and split into separate Numpy float arrays for each color channel.
 
         Args:
-            file_name: the name of the .txt file containing the dorf data.
+            file_path: the name of the .txt file containing the dorf data.
 
         Return:
             list of numpy float arrays, one for each color channel.
     """
-    file = os.path.join(data_directory, file_name)
     red_curves = np.zeros((1, DORF_DATAPOINTS), dtype=float)
     blue_curves = np.zeros((1, DORF_DATAPOINTS), dtype=float)
     green_curves = np.zeros((1, DORF_DATAPOINTS), dtype=float)
@@ -23,7 +22,7 @@ def _read_dorf_data(file_name, include_gamma):
     is_red = False
     is_green = False
     is_blue = False
-    with open(file) as f:
+    with open(file_path) as f:
         for line in f:
             text = line.rstrip().casefold()
             number_of_lines += 1
@@ -139,29 +138,27 @@ def process_CRF_data(include_gamma: Optional[bool] = False):
         include_gamma: bool whether to include non-color-specific response
             functions in the data. Defaults to False.
     """
-    list_of_curves = _read_dorf_data(DORF_FILE, include_gamma)
+    data_file_path = data_directory.joinpath(DORF_FILE)
+    list_of_curves = _read_dorf_data(data_file_path, include_gamma)
     processed_curves = _invert_and_interpolate_data(list_of_curves, DATAPOINTS)
     list_of_mean_curves = processed_curves.copy()
     list_of_mean_curves = _calculate_mean_curve(list_of_mean_curves)
 
     for i in range(len(ICRF_FILES)):
 
-        np.savetxt(os.path.join(data_directory, ICRF_FILES[i]),
-                   processed_curves[i])
-        np.savetxt(os.path.join(data_directory, MEAN_ICRF_FILES[i]),
-                   list_of_mean_curves[i])
+        np.savetxt(data_directory.joinpath(ICRF_FILES[i]), processed_curves[i])
+        np.savetxt(data_directory.joinpath(MEAN_ICRF_FILES[i]), list_of_mean_curves[i])
 
     return
 
 
 if __name__ == "__main__":
-    test_curves = _read_dorf_data(DORF_FILE)
+    data_file = data_directory.joinpath(DORF_FILE)
+    test_curves = _read_dorf_data(data_file)
     test_curves = _invert_and_interpolate_data(test_curves, DATAPOINTS)
     test_mean_curves = test_curves.copy()
     test_mean_curves = _calculate_mean_curve(test_mean_curves)
 
     for i in range(len(ICRF_FILES)):
-        np.savetxt(os.path.join(data_directory, ICRF_FILES[i]),
-                   test_curves[i])
-        np.savetxt(os.path.join(data_directory, MEAN_ICRF_FILES[i]),
-                   test_mean_curves[i])
+        np.savetxt(data_directory.joinpath(ICRF_FILES[i]), test_curves[i])
+        np.savetxt(data_directory.joinpath(MEAN_ICRF_FILES[i]), test_mean_curves[i])

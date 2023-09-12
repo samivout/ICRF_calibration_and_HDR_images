@@ -3,7 +3,7 @@ import cv2 as cv
 from global_settings import *
 
 
-def _process_videos(path):
+def _process_videos(path: Path):
     """
     Overview the data collection process. Load one video file at a time, process
     it and add the data to a collective data array after each video file.
@@ -16,32 +16,29 @@ def _process_videos(path):
     shaped as 256*256*3 for 8 bit RGB images for example.
     """
     data_array = np.zeros((BITS, BITS, CHANNELS), dtype=int)
-    files = os.listdir(path)
+    video_files = path.glob("*.avi")
 
-    for file in files:
-        if file.endswith(".avi"):
+    for file in video_files:
 
-            image_list = _load_images(path, file)
-            channel_separated_images = _separate_channels(image_list)
+        image_list = _load_images(file)
+        channel_separated_images = _separate_channels(image_list)
 
-            data_array += _calculate_mean_data(channel_separated_images)
+        data_array += _calculate_mean_data(channel_separated_images)
 
     return data_array
 
 
-def _load_images(path, file):
+def _load_images(file_path: Path):
     """
     Capture a frame from a video file and add it to a list of images.
 
-    :param path: absolute path to the directory of the video file
-
-    :param file: the name of the video file to be processed
+    :param file_path: the name of the video file to be processed
 
     :return: list of frames in the video. Each frame is a Numpy array.
     """
     image_list = []
 
-    video = cv.VideoCapture(os.path.join(path, file))
+    video = cv.VideoCapture(str(file_path))
     video_frames = int(video.get(cv.CAP_PROP_FRAME_COUNT)) - 1
     count = 0
     while video.isOpened():
@@ -129,7 +126,7 @@ def collect_mean_data():
     data_array = _process_videos(VIDEO_PATH)
     for index, file_name in enumerate(MEAN_DATA_FILES):
 
-        np.savetxt(file_name, data_array[:, :, index], fmt='%i')
+        np.savetxt(OUTPUT_DIRECTORY.joinpath(file_name), data_array[:, :, index], fmt='%i')
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from typing import Optional
 from typing import List
 import general_functions as gf
 from global_settings import *
+import copy
 
 
 def hat_weight(x: float):
@@ -56,19 +57,14 @@ def create_HDR_absolute(list_of_ImageSets: List[ImageSet]):
                                     out=np.zeros_like(numerator),
                                     where=denominator != 0))
 
-    imageSet_HDR = ImageSet(HDR_acq,
-                            HDR_std,
-                            list_of_ImageSets[0].file_name,
-                            None,
-                            list_of_ImageSets[0].mag,
-                            list_of_ImageSets[0].ill,
-                            list_of_ImageSets[0].name,
-                            None)
+    imageSet_HDR = copy.deepcopy(list_of_ImageSets[0])
+    imageSet_HDR.acq = HDR_acq
+    imageSet_HDR.std = HDR_std
 
     return imageSet_HDR
 
 
-def process_HDR_images(image_path: Optional[str] = DEFAULT_ACQ_PATH,
+def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
                        save_linear: Optional[bool] = False,
                        save_HDR: Optional[bool] = True,
                        save_8bit: Optional[bool] = True,
@@ -116,13 +112,14 @@ def process_HDR_images(image_path: Optional[str] = DEFAULT_ACQ_PATH,
                 imageSet.load_acq()
                 imageSet.load_std()
 
-            imageSet = gf.linearize_image_vectorized(imageSet, ICRF, ICRF_diff,
-                                                     STD_data)
+            imageSet = gf.linearize_ImageSet(imageSet, ICRF, ICRF_diff,
+                                             STD_data)
             if save_linear:
                 if save_8bit:
-                    gf.save_image_8bit(imageSet, OUT_PATH)
+                    imageSet.save_8bit(OUT_PATH.joinpath(imageSet.path.name))
                 if save_32bit:
-                    gf.save_image_32bit(imageSet, OUT_PATH)
+                    imageSet.save_32bit(OUT_PATH.joinpath(imageSet.path.name))
+                print(f"Saved {imageSet.path.name}")
 
     if fix_artifacts:
         del flat_list
@@ -137,9 +134,9 @@ def process_HDR_images(image_path: Optional[str] = DEFAULT_ACQ_PATH,
 
             imageSet_HDR = create_HDR_absolute(sublist)
             if save_8bit:
-                gf.save_image_8bit(imageSet_HDR, OUT_PATH)
+                imageSet_HDR.save_8bit(OUT_PATH.joinpath(imageSet_HDR.path.name))
             if save_32bit:
-                gf.save_image_32bit(imageSet_HDR, OUT_PATH)
+                imageSet_HDR.save_32bit(OUT_PATH.joinpath(imageSet_HDR.path.name))
 
     return
 

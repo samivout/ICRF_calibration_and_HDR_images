@@ -1,10 +1,11 @@
 import numpy as np
-import os
 import configparser
 from typing import Optional
+from pathlib import Path
 
-current_directory = os.path.dirname(__file__)
-data_directory = os.path.join(os.path.dirname(current_directory), 'data')
+current_directory = Path(__file__).parent.resolve()
+root_directory = current_directory.parent
+data_directory = root_directory.joinpath('data')
 
 
 def read_config_list(key):
@@ -16,7 +17,7 @@ def read_config_list(key):
     :return: Returns a list of strings, ints or floats.
     """
     config = configparser.ConfigParser()
-    config.read(os.path.join(data_directory, 'config.ini'))
+    config.read(data_directory.joinpath('config.ini'))
     sections = config.sections()
     data_list = []
     for section in sections:
@@ -45,7 +46,7 @@ def read_config_single(key):
     :return: Returns a single string, int, or float value.
     """
     config = configparser.ConfigParser()
-    config.read(os.path.join(data_directory, 'config.ini'))
+    config.read(data_directory.joinpath('config.ini'))
     sections = config.sections()
     single_item = ''
     for section in sections:
@@ -76,13 +77,12 @@ def read_data_from_txt(file_name: str, path: Optional[str] = None):
 
     Returns: numpy array of the txt file.
     """
-    if not path:
-        data_array = np.loadtxt(os.path.join(data_directory, file_name),
-                                dtype=float)
+    if path is None:
+        load_path = data_directory
     else:
-        load = os.path.join(path, file_name)
-        data_array = np.loadtxt(os.path.join(path, file_name),
-                                dtype=float)
+        load_path = Path(path)
+
+    data_array = np.loadtxt(load_path.joinpath(file_name), dtype=float)
 
     return data_array
 

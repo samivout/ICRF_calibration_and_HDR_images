@@ -359,7 +359,8 @@ if __name__ == "__main__":
         skew_list.append(skew)
         plt.stairs(hist[i, :], bins)
         plt.title(f'Skew: {skew}')
-        plt.savefig(os.path.join(r'E:\Kouluhommat\MSc SPV\Mittaukset jne\Analysis\ICRF calibration and HDR images\test output', f'Dist{ i}.png'), dpi=500)
+        path = Path(r'E:\Kouluhommat\MSc SPV\Mittaukset jne\Analysis\ICRF calibration and HDR images\test output').joinpath(f'Dist{ i}.png')
+        plt.savefig(path, dpi=500)
         plt.clf()
 
     print(skew_list)

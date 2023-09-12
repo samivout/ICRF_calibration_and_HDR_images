@@ -56,18 +56,18 @@ def process_base_data(path: Optional[str] = None, include_gamma: Optional[bool] 
     return STD_data
 
 
-def save_and_plot_ICRF(ICRF_array: np.ndarray, name: str, path: str):
+def save_and_plot_ICRF(ICRF_array: np.ndarray, name: str, path: Path):
 
-    np.savetxt(os.path.join(path, f"{name}.txt"), ICRF_array)
+    np.savetxt(path.joinpath(f"{name}.txt"), ICRF_array)
 
     plt.plot(linear_scale, ICRF_array[:, 0], color='b')
     plt.plot(linear_scale, ICRF_array[:, 1], color='g')
     plt.plot(linear_scale, ICRF_array[:, 2], color='r')
-    plt.savefig(os.path.join(path, f'{name}.png'), dpi=300)
+    plt.savefig(path.joinpath(f'{name}.png'), dpi=300)
 
     plt.clf()
 
-    np.savetxt(os.path.join(data_directory, f'ICRF_calibrated.txt'), ICRF_array)
+    np.savetxt(data_directory.joinpath(f'ICRF_calibrated.txt'), ICRF_array)
 
 
 def large_linearity_analysis(heights: Optional[List[int]] = None,
@@ -83,7 +83,7 @@ def large_linearity_analysis(heights: Optional[List[int]] = None,
         include_gamma: whether to include gamma functions from CRF database
         powers: list of exponents to use as initial function, i.e. x^power form.
     """
-    def linearity_cycle(path, init_func: Optional[np.ndarray] = None):
+    def linearity_cycle(path: Path, init_func: Optional[np.ndarray] = None):
         """
         Inner funciton to run a single cycle of linearity analysis.
         Args:
@@ -96,18 +96,18 @@ def large_linearity_analysis(heights: Optional[List[int]] = None,
             ICRF_array = calibrate_ICRF_noise(height, initial_function=init_func)
             if init_func is None:
                 save_and_plot_ICRF(ICRF_array, f"ICRFn_mean_h{height}", path)
-                scatter_path = os.path.join(path, f"SctrN_mean_h{height}.png")
+                scatter_path = path.joinpath(f"SctrN_mean_h{height}.png")
             else:
-                save_and_plot_ICRF(ICRF_array, f"ICRFn_h{height}_p{power}", path)
-                scatter_path = os.path.join(path, f"SctrN_mean_h{height}_p{power}.png")
+                save_and_plot_ICRF(ICRF_array, f"ICRFn_p{power}_h{height}", path)
+                scatter_path = path.joinpath(f"SctrN_p{power}_h{height}.png")
         else:
             ICRF_array = calibrate_ICRF_exposure(initial_function=init_func)
             if init_func is None:
                 save_and_plot_ICRF(ICRF_array, f"ICRFe_mean", path)
-                scatter_path = os.path.join(path, f"SctrE_mean.png")
+                scatter_path = path.joinpath(f"SctrE_mean.png")
             else:
                 save_and_plot_ICRF(ICRF_array, f"ICRFe_p{power}", path)
-                scatter_path = os.path.join(path, f"SctrE_p{power}.png")
+                scatter_path = path.joinpath(f"SctrE_p{power}.png")
 
         duration = timeit.default_timer() - start_time
 
@@ -125,7 +125,6 @@ def large_linearity_analysis(heights: Optional[List[int]] = None,
                                                 pass_results=pass_results,
                                                 STD_data=STD_data,
                                                 save_path=scatter_path)
-
 
         if init_func is None:
             results.append(f"Mean\t{height}\t{duration}\t{linearity_result[-1]}")
@@ -171,7 +170,7 @@ def large_linearity_analysis(heights: Optional[List[int]] = None,
         file_name = f"large_linearity_results_noise.txt"
     else:
         file_name = f"large_linearity_results_exposure.txt"
-    with open(os.path.join(OUT_PATH, file_name), 'w') as f:
+    with open(OUT_PATH.joinpath(file_name), 'w') as f:
         for row in results:
             f.write(f'{row}\n')
         f.close()

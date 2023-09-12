@@ -62,7 +62,7 @@ def analyze_principal_components():
 
         PCA_array = _calculate_principal_components(covariance_matrix)
 
-        np.savetxt(os.path.join(data_directory, PRINCIPAL_COMPONENT_FILES[i]), PCA_array)
+        np.savetxt(data_directory.joinpath(PRINCIPAL_COMPONENT_FILES[i]), PCA_array)
 
     return
 

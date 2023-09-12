@@ -1,5 +1,3 @@
-import ImageSet as IS
-import general_functions
 from ImageSet import ImageSet
 import numpy as np
 import cv2 as cv
@@ -223,7 +221,7 @@ def calibrate_flats():
         flatSet.acq = flatSet.acq - bias.acq
         flatSet.std = np.sqrt(flatSet.std ** 2 + bias.std ** 2)
 
-        gf.save_image_8bit(flatSet, FLAT_PATH)
+        flatSet.save_8bit(FLAT_PATH)
 
 
 def calibrate_dark_frames():
@@ -244,7 +242,7 @@ def calibrate_dark_frames():
         og_darkList[i].acq = og_darkList[i].acq - bias.acq
 
         og_darkList[i].std = np.sqrt(og_darkList[i].std ** 2 + bias.std ** 2)
-        gf.save_image_8bit(og_darkList[i], DARK_PATH)
+        og_darkList[i].save_8bit(DARK_PATH)
 
 
 def image_correction(acq_list: Optional[List[ImageSet]] = None,
@@ -291,7 +289,7 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
 
         # Save the corrected images
         if save_to_file:
-            gf.save_image_8bit(acqSet, OUT_PATH)
+            acqSet.save_8bit(OUT_PATH)
             acqSet.acq = None
             acqSet.std = None
 

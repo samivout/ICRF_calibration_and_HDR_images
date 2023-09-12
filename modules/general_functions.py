@@ -1,10 +1,11 @@
-import cv2 as cv
 import numpy as np
-import re
 import copy
+import webview
 from ImageSet import ImageSet
 from typing import List
 from typing import Optional
+from scipy.ndimage.filters import gaussian_filter
+from joblib import delayed, parallel
 from global_settings import*
 
 
@@ -31,10 +32,10 @@ def separate_to_sublists(list_of_ImageSets: List[ImageSet]):
         for i in range(number_of_sublists):
 
             sublist = list_of_sublists[i]
-            current_name = imageSet.name
+            current_name = imageSet.subject
             current_ill = imageSet.ill
             current_mag = imageSet.mag
-            names_in_sublist = sublist[0].name
+            names_in_sublist = sublist[0].subject
             ill_in_sublist = sublist[0].ill
             mag_in_sublist = sublist[0].mag
             if current_name == names_in_sublist and \
@@ -50,7 +51,34 @@ def separate_to_sublists(list_of_ImageSets: List[ImageSet]):
     return list_of_sublists
 
 
-def divide_imageSets(num: ImageSet, den: ImageSet,
+def copy_nested_list(list_of_sublists: List[List[ImageSet]],
+                     channel: Optional[int | List[int]] = None):
+    """
+    Create a copy of a nested list of ImageSet lists with single channels.
+    Args:
+        list_of_sublists: nested list to be copied.
+        channel: integer or list of integers representing the channel(s) to be
+            copied. None to copy no channels.
+
+    Returns: nested list of ImageSet objects with single channel acq and std.
+    """
+    ret_list = []
+
+    for sublist in list_of_sublists:
+
+        ret_sublist = []
+
+        for imageSet in sublist:
+
+            extracted_set = imageSet.copy(channel)
+            ret_sublist.append(extracted_set)
+
+        ret_list.append(ret_sublist)
+
+    return ret_list
+
+
+def divide_imageSets(im0: ImageSet, im1: ImageSet | float,
                      use_std: Optional[bool] = False,
                      lower: Optional[float] = 0,
                      upper: Optional[float] = 1):
@@ -58,39 +86,194 @@ def divide_imageSets(num: ImageSet, den: ImageSet,
     Calculates the division of two images using ImageSet objects. Can also
     calculate error of the division. At pixels whose value for either the
     numerator or denominator fall outside the lower and upper limits, the result
-    pixel value will be set to zero.
+    pixel value will be set to NaN.
     Args:
-        num: the numerator ImageSet
-        den: the denominator ImageSet
+        im0: the numerator ImageSet
+        im1: the denominator ImageSet or float constant.
         use_std: whether to calculate error or not, defaults to False
         lower: lower limit of values to include in division
         upper: upper limit of values to include in division
 
     Returns:
-        Numpy array of the division result and if desired, the error of the
-        division.
+        New ImageSet object with num as the copy base.
     """
+    x0 = im0.acq
+    both_imageSets = type(im1) is ImageSet
 
-    division = np.divide(num.acq, den.acq,
-                         out=np.zeros_like(num.acq),
-                         where=((lower < den.acq) & (den.acq < upper) &
-                                (lower < num.acq) & (num.acq < upper)))
+    if both_imageSets:
+        x1 = im1.acq
+        where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+    else:
+        x1 = im1
+        where = (lower < x0) & (x0 < upper)
 
-    if not use_std:
-        return division
+    division = np.divide(x0, x1, out=np.full_like(x0, np.nan), where=where)
+    division_std = None
 
-    u_x = np.divide(num.std, den.acq, out=np.zeros_like(num.acq),
-                    where=((lower < den.acq) & (den.acq < upper) &
-                           (lower < num.acq) & (num.acq < upper)))
+    if use_std:
 
-    u_y = np.divide(num.acq * den.std, den.acq ** 2,
-                    out=np.zeros_like(num.acq),
-                    where=((lower < den.acq) & (den.acq < upper) &
-                           (lower < num.acq) & (num.acq < upper)))
+        x0_std = im0.std
 
-    division_std = np.sqrt(u_x ** 2 + u_y ** 2)
+        u_x0 = np.divide(x0_std, x1, out=np.full_like(x0, np.nan),
+                         where=where)
 
-    return division, division_std
+        if both_imageSets:
+            x1_std = im1.std
+            u_x1 = np.divide(x0 * x1_std, x1 ** 2,
+                             out=np.full_like(x0, np.nan), where=where)
+            division_std = np.sqrt(u_x0 ** 2 + u_x1 ** 2)
+        else:
+            division_std = u_x0
+
+    divisionSet = im0.copy()
+    divisionSet.acq = division
+    divisionSet.std = division_std
+
+    return divisionSet
+
+
+def multiply_imageSets(im0: ImageSet, im1: ImageSet | float,
+                       use_std: Optional[bool] = False,
+                       lower: Optional[float] = 0,
+                       upper: Optional[float] = 1):
+    """
+    Calculates the product of two images using ImageSet objects. Can also
+    calculate error of the division. At pixels whose value for either the
+    numerator or denominator fall outside the lower and upper limits, the result
+    pixel value will be set to NaN.
+    Args:
+        im0: The first ImageSet.
+        im1: The second ImageSet.
+        use_std: whether to calculate error or not, defaults to False.
+        lower: lower limit of values to include in calculation.
+        upper: upper limit of values to include in calculation.
+
+    Returns:
+        New ImageSet object with x0 as the copy base.
+    """
+    x0 = im0.acq
+    both_imageSets = type(im1) is ImageSet
+
+    if both_imageSets:
+        x1 = im1.acq
+        where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+    else:
+        x1 = im1
+        where = (lower < x0) & (x0 < upper)
+
+    product = np.multiply(x0, x1, out=np.full_like(x0, np.nan), where=where)
+    product_std = None
+
+    if use_std:
+
+        x0_std = im0.std
+        u_x0 = np.multiply(x0_std, x1, out=np.full_like(x0, np.nan), where=where)
+
+        if both_imageSets:
+            x1_std = im1.std
+            u_x1 = np.multiply(x0, x1_std, out=np.full_like(x0, np.nan), where=where)
+            product_std = np.sqrt(u_x0 ** 2 + u_x1 ** 2)
+        else:
+            product_std = u_x0
+
+    divisionSet = im0.copy()
+    divisionSet.acq = product
+    divisionSet.std = product_std
+
+    return divisionSet
+
+
+def add_imageSets(im0: ImageSet, im1: ImageSet | float,
+                  use_std: Optional[bool] = False,
+                  lower: Optional[float] = 0,
+                  upper: Optional[float] = 1):
+    """
+    Calculates the sum of two ImageSet objects with errors if desired. Pixels
+    whose value falls outside the lower and upper limits are set to NaN.
+    Args:
+        im0: first ImageSet
+        im1: second ImageSet
+        use_std: Whether to use errors or not.
+        lower: Lower limit of values to include in calculation.
+        upper: Upper limit of values to include in calculation.
+
+    Returns:
+        New ImageSet object with x0 as copy base.
+    """
+    x0 = im0.acq
+    both_imageSets = type(im1) is ImageSet
+
+    if both_imageSets:
+        x1 = im1.acq
+        where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+    else:
+        x1 = im1
+        where = (lower < x0) & (x0 < upper)
+
+    addition = np.add(x0, x1, out=np.full_like(x0, np.nan), where=where)
+    addition_std = None
+
+    if use_std:
+        x0_std = im0.std
+        if not both_imageSets:
+            addition_std = x0_std
+        else:
+            x1_std = im1.std
+            addition_std = np.sqrt(np.add(x0_std ** 2, x1_std ** 2,
+                                   out=np.full_like(x0, np.nan), where=where))
+
+    additionSet = im0.copy()
+    additionSet.acq = addition
+    additionSet.std = addition_std
+
+    return additionSet
+
+
+def subtract_imageSets(im0: ImageSet, im1: ImageSet | float,
+                       use_std: Optional[bool] = False,
+                       lower: Optional[float] = 0,
+                       upper: Optional[float] = 1):
+    """
+    Calculates the subtraction of two ImageSet objects with errors if desired.
+    Pixels whose value falls outside the lower and upper limits are set to NaN.
+    Args:
+        im0: The subtractee ImageSet
+        im1: The subtracting ImageSet
+        use_std: Whether to use errors or not.
+        lower: Lower limit of values to include in calculation.
+        upper: Upper limit of values to include in calculation.
+
+    Returns:
+        New ImageSet object with x0 as copy base.
+    """
+    x0 = im0.acq
+    both_imageSets = type(im1) is ImageSet
+
+    if both_imageSets:
+        x1 = im1.acq
+        where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+    else:
+        x1 = im1
+        where = (lower < x0) & (x0 < upper)
+
+    subtraction = np.subtract(x0, x1, out=np.full_like(x0, np.nan), where=where)
+    subtraction_std = None
+
+    if use_std:
+        x0_std = im0.std
+        if not both_imageSets:
+            subtraction_std = x0_std
+        else:
+            x1_std = im1.std
+            subtraction_std = np.sqrt(np.add(x0_std ** 2, x1_std ** 2,
+                                             out=np.full_like(x0, np.nan),
+                                             where=where))
+
+    subtractionSet = im0.copy()
+    subtractionSet.acq = subtraction
+    subtractionSet.std = subtraction_std
+
+    return subtractionSet
 
 
 def choose_evenly_spaced_points(array: np.ndarray, num_points: int):
@@ -126,39 +309,56 @@ def interpolate_frames(x0, x1, exp):
     return interpolated_imageSet
 
 
-def linearize_image_vectorized(imageSet: ImageSet,
-                               ICRF: np.ndarray,
-                               ICRF_diff: Optional[np.ndarray] = None,
-                               STD_arr: Optional[np.ndarray] = None):
+def linearize_ImageSet(imageSet: ImageSet,
+                       ICRF: np.ndarray,
+                       ICRF_diff: Optional[np.ndarray] = None,
+                       STD_arr: Optional[np.ndarray] = None,
+                       gaussian_blur: Optional[bool] = True):
     """
     Linearizes an input image using an ICRF. Additionally, if a derivative of
     the ICRF and an array representing the standard deviations of a pixel value
     is supplied, an error image is calculated for the linearized image.
     Args:
-        imageSet: imageSet object whose, acquired image is linearized
-        ICRF: ICRF as numpy array
-        ICRF_diff: derivative of ICRF as numpy array
-        STD_arr: camera STD data as numpy array
+        imageSet: imageSet object whose, acquired image is linearized.
+        ICRF: ICRF as numpy array.
+        ICRF_diff: derivative of ICRF as numpy array.
+        STD_arr: camera STD data as numpy array.
+        gaussian_blur: whether to apply blur to the result or not.
 
     Returns: the input ImageSet object with linearized acq and possibly new
         error image.
     """
+    acq = imageSet.acq
+    channels = np.shape(imageSet.acq)[2]
 
     use_std = False
     if ICRF_diff is not None and STD_arr is not None:
         use_std = True
 
-    acq = (imageSet.acq * MAX_DN).astype(int)
-    acq_new = np.zeros(np.shape(acq), dtype=np.dtype('float32'))
+    acq_new = np.zeros(np.shape(imageSet.acq), dtype=np.dtype('float32'))
     if use_std:
-        std_new = np.zeros(np.shape(acq), dtype=np.dtype('float32'))
-    for c in range(CHANNELS):
+        std_new = np.zeros(np.shape(imageSet.acq), dtype=np.dtype('float32'))
 
-        # The ICRFs are in reverse order in the .txt file when compared
-        # to how OpenCV opens the channels.
-        acq_new[:, :, c] = ICRF[acq[:, :, c], c]
+    def channel_loop(acq_c: np.ndarray, ICRF_c: np.ndarray, ICRF_diff_c: np.ndarray,
+                     STD_arr_c: np.ndarray, gauss: bool):
+
+        ret = linearize_channel(acq_c, ICRF_c, ICRF_diff_c, STD_arr_c, gauss)
+
+        return ret
+
+    if use_std:
+        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq[:, :, c], ICRF[:, c], ICRF_diff[:, c], STD_arr[:, c], gaussian_blur) for c in range(channels))
+    else:
+        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq[:, :, c], ICRF_c=ICRF[:, c], ICRF_diff_c=None, STD_arr_c=None, gauss=gaussian_blur) for c in range(channels))
+
+    for c in range(channels):
+        channel_res = sub_results[c]
+        acq_new[:, :, c] = channel_res[0]
         if use_std:
-            std_new[:, :, c] = ICRF_diff[acq[:, :, c], c] * STD_arr[acq[:, :, c], c]
+            std_new[:, :, c] = channel_res[1]
+
+    del channel_res
+    del sub_results
 
     imageSet.acq = acq_new
     if use_std:
@@ -167,7 +367,34 @@ def linearize_image_vectorized(imageSet: ImageSet,
     return imageSet
 
 
-def create_imageSets(path):
+def linearize_channel(channel: np.ndarray,
+                      ICRF: np.ndarray,
+                      ICRF_diff: Optional[np.ndarray] = None,
+                      STD_arr: Optional[np.ndarray] = None,
+                      gaussian_blur: Optional[bool] = True):
+
+    channel = (np.around(channel * MAX_DN)).astype(int)
+    linear_channel = ICRF[channel]
+
+    use_std = False
+    if ICRF_diff is not None and STD_arr is not None:
+        use_std = True
+
+    if not use_std:
+        return [linear_channel]
+
+    if use_std:
+        linear_std = ICRF_diff[channel] * STD_arr[channel]
+
+    if gaussian_blur:
+        linear_channel = gaussian_filter(linear_channel, sigma=1)
+        if use_std:
+            linear_std = gaussian_filter(linear_std, sigma=1)
+
+    return [linear_channel, linear_std]
+
+
+def create_imageSets(path: Path):
     """
     Load all images of a given path into a list of ImageSet objects but without
     acq or std images.
@@ -178,88 +405,33 @@ def create_imageSets(path):
     """
 
     list_of_ImageSets = []
-    files = os.listdir(path)
-    for file in files:
-        if file.endswith(".tif"):
-            file_name_array = file.removesuffix('.tif').split()
-            if not ("STD" in file_name_array):
+    image_files = path.glob("*.tif")
+    for file in image_files:
+        if not ("STD" in file.name):
 
-                # print(file_name_array)
-                acq = None
-                std = None
-                exp = None
-                ill = None
-                mag = None
-                name = None
-
-                for element in file_name_array:
-                    if element.casefold() == 'bf' or element.casefold() == 'df':
-                        ill = element
-                    elif re.match("^[0-9]+.*[xX]$", element):
-                        mag = element
-                    elif re.match("^[0-9]+.*ms$", element):
-                        exp = float(element.removesuffix('ms'))
-                    else:
-                        name = element
-                imageSet = ImageSet(acq, std, file, exp, mag, ill, name, path)
-                list_of_ImageSets.append(imageSet)
+            imageSet = ImageSet(file)
+            list_of_ImageSets.append(imageSet)
 
     return list_of_ImageSets
 
 
-def save_image_8bit(imageSet: ImageSet, path):
-    """
-    Saves an ImageSet object's acquired image and error image to disk to given
-    path in an 8-bits per channel format.
-    Args:
-        imageSet: ImageSet object, whose images to save.
-        path: Dir path where to save images, name is supplied by the ImageSet
-            object
-    """
-    bit8_image = imageSet.acq
-    max_float = np.amax(bit8_image)
+def create_imageSet_dialog(title: str):
+    file = None
 
-    if max_float > 1:
-        bit8_image /= max_float
-
-    bit8_image = (bit8_image * MAX_DN).astype(np.dtype('uint8'))
-    path_name = os.path.join(path, imageSet.file_name)
-    cv.imwrite(path_name, bit8_image)
-
-    if imageSet.std is not None:
-
-        bit8_image = (imageSet.std * MAX_DN).astype(np.dtype('uint8'))
-        cv.imwrite(path_name.removesuffix('.tif')+' STD.tif', bit8_image)
+    def open_file_dialog(w):
+        nonlocal file
+        try:
+            file = w.create_file_dialog(webview.OPEN_DIALOG)[0]
+        except TypeError:
+            pass  # user exited file dialog without picking
+        finally:
+            w.destroy()
+    window = webview.create_window(title, hidden=True)
+    webview.start(open_file_dialog, window)
+    # file will either be a string or None
+    if file is not None:
+        imageSet = ImageSet(Path(file))
+        return imageSet
 
     return
 
-
-def save_image_32bit(imageSet: ImageSet, path):
-    """
-    Saves an ImageSet object's acquired image and error image to disk to given
-    path into separate BGR channels in 32-bit format.
-    Args:
-        imageSet: ImageSet object, whose images to save.
-        path: Dir path where to save images, name is supplied by the ImageSet
-            object
-    """
-    bit32_image = imageSet.acq
-    path_name = os.path.join(path, imageSet.file_name)
-    cv.imwrite(path_name.removesuffix('.tif')+' blue.tif',
-               bit32_image[:, :, 0])
-    cv.imwrite(path_name.removesuffix('.tif') + ' green.tif',
-               bit32_image[:, :, 1])
-    cv.imwrite(path_name.removesuffix('.tif') + ' red.tif',
-               bit32_image[:, :, 2])
-
-    if imageSet.std is not None:
-
-        bit32_image = imageSet.std
-        cv.imwrite(path_name.removesuffix('.tif') + ' STD blue.tif',
-                   bit32_image[:, :, 0])
-        cv.imwrite(path_name.removesuffix('.tif') + ' STD green.tif',
-                   bit32_image[:, :, 1])
-        cv.imwrite(path_name.removesuffix('.tif') + ' STD red.tif',
-                   bit32_image[:, :, 2])
-
-    return

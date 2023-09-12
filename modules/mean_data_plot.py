@@ -42,7 +42,7 @@ def plot_noise_profiles_3d(mean_data_arr):
         ax.plot_surface(X, Y, data_to_plot, rstride=1, cstride=1, cmap='viridis',
                         edgecolor='none')
         ax.view_init(45, -30)
-        plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'3d_Profiles{c}.png'))
+        plt.savefig(OUTPUT_DIRECTORY.joinpath(f'3d_Profiles{c}.png'))
         plt.clf()
 
     return
@@ -77,7 +77,7 @@ def plot_noise_profiles_2d(mean_data_array):
             plt.plot(x_range, normalized_row)
             plt.vlines(mode_index, 0, mode)
 
-        plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'Profiles{c}.png'), dpi=300)
+        plt.savefig(OUTPUT_DIRECTORY.joinpath(f'Profiles{c}.png'), dpi=300)
         plt.clf()
 
     return
@@ -89,7 +89,7 @@ def plot_heatmap(mean_data_array):
 
     for c in range(CHANNELS):
         ax = sns.heatmap(mean_data_array[:, :, c], square=True, norm=LogNorm())
-        plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'Heatmap{c}.png'), dpi=700)
+        plt.savefig(OUTPUT_DIRECTORY.joinpath(f'Heatmap{c}.png'), dpi=700)
         plt.clf()
 
     return
@@ -102,7 +102,7 @@ def plot_ICRF(ICRF_array):
     plt.plot(x_range, ICRF_array[:, 0], color='r')
     plt.plot(x_range, ICRF_array[:, 1], color='g')
     plt.plot(x_range, ICRF_array[:, 2], color='b')
-    plt.savefig(os.path.join(OUTPUT_DIRECTORY, f'ICRF.png'), dpi=300)
+    plt.savefig(OUTPUT_DIRECTORY.joinpath(f'ICRF.png'), dpi=300)
     plt.clf()
 
 
@@ -130,7 +130,7 @@ def print_mean_data_mode(mean_data_array):
             noise_profile = mean_data_array[i, ::4, c]
             modes[i, c] = np.argmax(noise_profile)
 
-    np.savetxt(os.path.join(OUTPUT_DIRECTORY, 'modes.txt'), modes, fmt='%i')
+    np.savetxt(OUTPUT_DIRECTORY.joinpath('modes.txt'), modes, fmt='%i')
 
     return
 

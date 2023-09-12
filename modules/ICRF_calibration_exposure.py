@@ -1,12 +1,10 @@
-import copy
-import ImageSet as IS
 import numpy as np
 from scipy.optimize._differentialevolution import DifferentialEvolutionSolver
 import general_functions as gf
 from typing import Optional
 from global_settings import *
 
-ICRF = np.zeros((DATAPOINTS, 1), dtype=float)
+ICRF = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
 linear_scale = np.linspace(0, 1, DATAPOINTS, dtype=float)
 
 
@@ -32,25 +30,7 @@ def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
     return iterated_ICRF
 
 
-def linearize_image_vectorized(imageSet, channel):
-
-    acq = (imageSet.acq * MAX_DN).astype(int)
-    acq_new = np.zeros(np.shape(acq), dtype=float)
-    # std_new = np.zeros(np.shape(acq), dtype=float)
-
-    # The ICRFs are in reverse order in the .txt file when compared
-    # to how OpenCV opens the channels.
-    acq_new[:, :, channel] = ICRF[acq[:, :, channel]]
-    # std_new[:, :, channel] = ICRF_diff[acq[:, :, channel]] * \
-    #    STD_arr[acq[:, :, channel]]
-
-    imageSet.acq = acq_new
-    # imageSet.std = std_new
-
-    return imageSet
-
-
-def analyze_linearity(sublists_of_imageSets, channel):
+def analyze_linearity(sublists_of_imageSets):
     """
     Analyze the linearity of images taken at different exposures.
     Args:
@@ -61,6 +41,12 @@ def analyze_linearity(sublists_of_imageSets, channel):
     results = []
     lower = 5 / MAX_DN
     upper = 250 / MAX_DN
+
+    range_step = (upper - lower) / 3
+
+    low_range = [lower, range_step]
+    mid_range = [range_step, 2*range_step]
+    high_range = [2*range_step, upper]
 
     for sublist in sublists_of_imageSets:
 
@@ -75,21 +61,34 @@ def analyze_linearity(sublists_of_imageSets, channel):
 
                 x = sublist[i]
                 y = sublist[j]
-                # stds = []
-                division = np.divide(x.acq[:, :, channel], y.acq[:, :, channel],
-                                     out=np.zeros_like(x.acq[:, :, channel]),
-                                     where=((lower < y.acq[:, :, channel]) & (y.acq[:, :, channel] < upper) &
-                                            (lower < x.acq[:, :, channel]) & (x.acq[:, :, channel] < upper)))
-
-                nonzeros = np.nonzero(division)
-                channel_mean = np.mean(division[nonzeros])
-                # channel_std = np.std(division[nonzeros])
-                # stds.append(channel_std)
 
                 ratio = x.exp / y.exp
                 if ratio < 0.05:
                     break
-                result = (abs(channel_mean-ratio))/ratio
+
+                division = np.divide(x.acq, y.acq,
+                                     out=np.full_like(x.acq, np.nan),
+                                     where=((lower < y.acq) & (y.acq < upper) &
+                                            (lower < x.acq) & (x.acq < upper)))
+
+                division = abs(division - ratio) / ratio
+
+                where = (low_range[0] < x.acq) & (x.acq < low_range[1]) &\
+                        (low_range[0] < y.acq) & (y.acq < low_range[1])
+                low_channel_mean = np.nanmean(division[where])
+
+                where = (mid_range[0] < x.acq) & (x.acq < mid_range[1]) &\
+                        (mid_range[0] < y.acq) & (y.acq < mid_range[1])
+                mid_channel_mean = np.nanmean(division[where])
+
+                where = (high_range[0] < x.acq) & (x.acq < high_range[1]) & \
+                        (high_range[0] < y.acq) & (y.acq < high_range[1])
+                high_channel_mean = np.nanmean(division[where])
+
+                res_arr = np.array([low_channel_mean, mid_channel_mean, high_channel_mean])
+
+                # result = max(low_channel_mean, mid_channel_mean, high_channel_mean)
+                result = np.nanmean(res_arr)
                 results.append(result)
 
     data_array = np.array(results)
@@ -112,20 +111,20 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, acq_sublists, channel):
         The mean skewness of value of all the distributions as a float.
     """
     global ICRF
-    ICRF = _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params)
-    ICRF[:] += 1 - ICRF[-1]
-    ICRF[0] = 0
-    if np.max(ICRF) > 1 or np.min(ICRF) < 0:
+    ICRF[:, channel] = _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params)
+    ICRF[:, channel] += 1 - ICRF[-1, channel]
+    ICRF[0, channel] = 0
+    if np.max(ICRF[:, channel]) > 1 or np.min(ICRF[:, channel]) < 0:
         energy = np.inf
         return energy
 
-    acq_sublists_iter = copy.deepcopy(acq_sublists)
+    acq_sublists_iter = gf.copy_nested_list(acq_sublists, channel)
     for sublist in acq_sublists_iter:
         for imageSet in sublist:
 
-            linearize_image_vectorized(imageSet, channel)
+            gf.linearize_ImageSet(imageSet, ICRF[:, [channel]], gaussian_blur=True)
 
-    linearity_data = analyze_linearity(acq_sublists_iter, channel)
+    linearity_data = analyze_linearity(acq_sublists_iter)
     energy = np.mean(linearity_data)
     if np.isnan(energy):
         energy = np.Inf
@@ -170,7 +169,6 @@ def calibration(lower_limit, upper_limit,
             final_energy_array: a Numpy float array containing the final
                 energies of each channel.
        """
-    ICRF_array = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
     final_energy_array = np.zeros(CHANNELS, dtype=float)
     initial_energy_array = np.zeros(CHANNELS, dtype=float)
 
@@ -183,7 +181,7 @@ def calibration(lower_limit, upper_limit,
     acq_list = gf.create_imageSets(ACQ_PATH)
     for imageSet in acq_list:
         imageSet.load_acq()
-        imageSet.acq = gf.choose_evenly_spaced_points(imageSet.acq, 30)
+        imageSet.acq = gf.choose_evenly_spaced_points(imageSet.acq, 250)
     acq_sublists = gf.separate_to_sublists(acq_list)
     for sublist in acq_sublists:
         sublist.sort(key=lambda imageSet: imageSet.exp)
@@ -202,12 +200,19 @@ def calibration(lower_limit, upper_limit,
             mean_ICRF_array = rd.read_data_from_txt(mean_ICRF_file_name)
         else:
             mean_ICRF_array = initial_function
-
-        limit = 0.01
+        '''
+        if i == 0:
+            limit = 0.29
+        if i == 1:
+            limit = 0.75
+        if i == 2:
+            limit = 0.34
+        '''
+        limit = 0.1
 
         with DifferentialEvolutionSolver(_energy_function, limits, args=(
             mean_ICRF_array, PCA_array, acq_sublists, i),
-                                         strategy='best1bin', tol=0.0001) as solver:
+                                         strategy='best1bin', tol=0.3) as solver:
             for step in solver:
                 step = next(solver)  # Returns a tuple of xk and func evaluation
                 func_value = step[1]  # Retrieves the func evaluation
@@ -224,7 +229,7 @@ def calibration(lower_limit, upper_limit,
         final_energy_array[i] = evaluation
         print('Solution: f(%s) = %.5f' % (solution, evaluation))
         '''
-        ICRF_array[:, i] = ICRF
+    ICRF_array = ICRF
 
     ICRF_array[:, 0] += 1 - ICRF_array[-1, 0]
     ICRF_array[:, 1] += 1 - ICRF_array[-1, 1]
@@ -234,11 +239,25 @@ def calibration(lower_limit, upper_limit,
     ICRF_array[0, 1] = 0
     ICRF_array[0, 2] = 0
 
+    ICRF_array[ICRF_array < 0] = 0
+
     ICRF_interpolated = interpolate_ICRF(ICRF_array)
 
     return ICRF_interpolated, initial_energy_array, final_energy_array
 
 
 if __name__ == "__main__":
+
+    arr = np.arange(27).reshape((3, 3, 3)).astype(float)
+    '''
+    arr[:,:,1] = np.nan
+    arr2 = arr[:,:,[1]]
+    arr3 = np.zeros((DATAPOINTS, 1), dtype=float)
+    print(np.shape(arr3))
+    '''
+    print(arr[:, :, 0])
+    ch = [0]
+    help = np.take(arr, ch, axis=2)
+    print(help[:,:,0])
 
     print('Run script from main file!')

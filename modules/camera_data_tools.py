@@ -106,8 +106,7 @@ def clean_and_interpolate_data(path: Optional[str] = None):
         base_data_arr[:, :, c] = clean_data_edges(base_data_arr[:, :, c])
         final_data_arr[:, :, c] = interpolate_data(base_data_arr[:, :, c])
 
-        np.savetxt(os.path.join(data_directory, mean_data_name),
-                   final_data_arr[:, :, c], fmt="%d")
+        np.savetxt(data_directory.joinpath(mean_data_name), final_data_arr[:, :, c], fmt="%d")
 
 
 if __name__ == "__main__":

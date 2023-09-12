@@ -1,5 +1,6 @@
 import numpy as np
 import math
+from typing import Optional
 from global_settings import *
 
 
@@ -23,7 +24,7 @@ def calculate_STD(mean_data_array):
     return STD_array
 
 
-def process_STD_data():
+def process_STD_data(pass_result: Optional[bool] = True):
 
     mean_data_array = np.zeros((MAX_DN + 1, DATAPOINTS, CHANNELS), dtype=int)
     STD_data = np.zeros((MAX_DN + 1, CHANNELS), dtype=float)
@@ -33,9 +34,12 @@ def process_STD_data():
         mean_data_array[:, :, i] = rd.read_data_from_txt(mean_file_name)
         STD_data[:, i] = calculate_STD(mean_data_array[:, :, i])
 
-    np.savetxt(os.path.join(data_directory, STD_FILE_NAME), STD_data)
+    np.savetxt(data_directory.joinpath(STD_FILE_NAME), STD_data)
 
-    return STD_data
+    if pass_result:
+        return STD_data
+
+    return
 
 
 if __name__ == "__main__":
