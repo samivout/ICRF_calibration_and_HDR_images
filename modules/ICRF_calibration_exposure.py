@@ -2,6 +2,8 @@ import numpy as np
 from scipy.optimize._differentialevolution import DifferentialEvolutionSolver
 import general_functions as gf
 from typing import Optional
+from typing import List
+from ImageSet import ImageSet
 from global_settings import *
 
 ICRF = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
@@ -30,12 +32,13 @@ def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
     return iterated_ICRF
 
 
-def analyze_linearity(sublists_of_imageSets):
+def analyze_linearity(sublists_of_imageSets: List[List[ImageSet]],
+                      use_relative: Optional[bool] = True):
     """
     Analyze the linearity of images taken at different exposures.
     Args:
-        sublists_of_imageSets: Optionally pass sublist from previous calculations
-
+        sublists_of_imageSets: Optionally pass sublist from previous calculations.
+        use_relative: whether to utilize relative or absolute pixel values.
     Returns:
     """
     results = []
@@ -66,24 +69,30 @@ def analyze_linearity(sublists_of_imageSets):
                 if ratio < 0.05:
                     break
 
-                division = np.divide(x.acq, y.acq,
-                                     out=np.full_like(x.acq, np.nan),
-                                     where=((lower < y.acq) & (y.acq < upper) &
-                                            (lower < x.acq) & (x.acq < upper)))
+                y = gf.multiply_imageSets(y, ratio, use_std=False)
+                linearSet = gf.subtract_imageSets(x, y, use_std=False, lower=lower,
+                                                  upper=upper)
 
-                division = abs(division - ratio) / ratio
+                if use_relative:
+                    linearSet = gf.divide_imageSets(x, y, use_std=False, lower=lower,
+                                                    upper=upper)
+
+                if use_relative:
+                    acq = abs(linearSet.acq - 1)
+                else:
+                    acq = abs(linearSet.acq * MAX_DN)
 
                 where = (low_range[0] < x.acq) & (x.acq < low_range[1]) &\
                         (low_range[0] < y.acq) & (y.acq < low_range[1])
-                low_channel_mean = np.nanmean(division[where])
+                low_channel_mean = np.nanmean(acq[where])
 
                 where = (mid_range[0] < x.acq) & (x.acq < mid_range[1]) &\
                         (mid_range[0] < y.acq) & (y.acq < mid_range[1])
-                mid_channel_mean = np.nanmean(division[where])
+                mid_channel_mean = np.nanmean(acq[where])
 
                 where = (high_range[0] < x.acq) & (x.acq < high_range[1]) & \
                         (high_range[0] < y.acq) & (y.acq < high_range[1])
-                high_channel_mean = np.nanmean(division[where])
+                high_channel_mean = np.nanmean(acq[where])
 
                 res_arr = np.array([low_channel_mean, mid_channel_mean, high_channel_mean])
 
@@ -122,7 +131,7 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, acq_sublists, channel):
     for sublist in acq_sublists_iter:
         for imageSet in sublist:
 
-            gf.linearize_ImageSet(imageSet, ICRF[:, [channel]], gaussian_blur=True)
+            gf.linearize_ImageSet(imageSet, ICRF[:, [channel]], ICRF_diff=None, gaussian_blur=True)
 
     linearity_data = analyze_linearity(acq_sublists_iter)
     energy = np.mean(linearity_data)

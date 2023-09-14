@@ -112,8 +112,7 @@ def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
                 imageSet.load_acq()
                 imageSet.load_std()
 
-            imageSet = gf.linearize_ImageSet(imageSet, ICRF, ICRF_diff,
-                                             STD_data)
+            imageSet = gf.linearize_ImageSet(imageSet, ICRF, ICRF_diff)
             if save_linear:
                 if save_8bit:
                     imageSet.save_8bit(OUT_PATH.joinpath(imageSet.path.name))

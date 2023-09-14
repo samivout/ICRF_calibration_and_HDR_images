@@ -152,11 +152,11 @@ def main():
     # calibrate_ICRF_e()
     # process_mdl()
     # image_correction.image_correction(save_to_file=True)
-    # process_HDR()
+    process_HDR()
     # image_calculation.calibrate_dark_frames()
     # image_calculation.calibrate_flats()
-    ia.analyze_linearity(OUT_PATH, use_std=True, absolute_result=False, use_relative=False)
-    # ia.analyze_linearity(ACQ_PATH, use_std=True, absolute_result=False, use_relative=False)
+    # ia.analyze_linearity(OUT_PATH, use_std=True, absolute_result=False, use_relative=False)
+    # ia.analyze_linearity(ACQ_PATH, use_std=True, absolute_result=False, use_relative=True)
     # large_linearity_analysis(data_paths)
 
 

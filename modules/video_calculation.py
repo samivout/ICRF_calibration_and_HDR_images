@@ -1,47 +1,61 @@
 import numpy as np
 from scipy import stats as st
 import cv2 as cv
+import general_functions as gf
+from typing import Optional
 from global_settings import *
 
 
-def calculate_images(path: Path):
-    mean_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=int)
-    mode_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=int)
-    median_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=int)
+def calculate_images(path: Path, use_mean: bool, use_std: bool,
+                     use_median: bool, use_mode: bool):
 
-    video_files = path.glob("*.avi")
+    video, count = load_video(path)
 
-    for file in video_files:
+    mean_image = None
+    std_image = None
+    median_image = None
+    mode_image = None
 
-        stacked_array, count = load_video(path, file)
-        mean_image = calculate_mean_image(stacked_array)
-        median_image = calculate_median_image(stacked_array)
-        mode_image = calculate_mode_image(stacked_array)
-        print(mode_image.shape)
-        break
+    if use_mean:
+        mean_image = calculate_mean_image(video)
+    if use_std:
+        std_image = calculate_std(video)
+    if use_median:
+        median_image = calculate_median_image(video)
+    if use_mode:
+        mode_image = calculate_mode_image(video)
 
-    return mean_image, median_image, mode_image
+    ret = {'mean': mean_image, 'std': std_image, 'median': median_image, 'mode': mode_image}
 
-
-def calculate_mode_image(stacked_array):
-
-    mode_image = st.mode(stacked_array, axis=-1, keepdims=False)
-
-    return mode_image[0]
+    return ret
 
 
-def calculate_mean_image(stacked_array):
+def calculate_mode_image(video: np.ndarray):
 
-    mean_image = np.mean(stacked_array, axis=-1)
+    mode_image = st.mode(video, axis=-1, keepdims=False, dtype=np.dtype('float32'))
 
-    return mean_image.astype(int)
+    return mode_image[0].astype(np.dtype('uint8'))
 
 
-def calculate_median_image(stacked_array):
+def calculate_std(video: np.ndarray):
 
-    median_image = np.median(stacked_array, axis=-1)
+    std_image = np.std(video, axis=-1, keepdims=False, dtype=np.dtype('float32'))
 
-    return median_image.astype(int)
+    return std_image.astype(np.dtype('uint8'))
+
+
+def calculate_mean_image(video: np.ndarray):
+
+    mean_image = np.mean(video, axis=-1, keepdims=False, dtype=np.dtype('float32'))
+
+    return mean_image.astype(np.dtype('uint8'))
+
+
+def calculate_median_image(video: np.ndarray):
+
+    median_image = np.median(video, axis=-1, keepdims=False, dtype=np.dtype('float32'))
+
+    return median_image.astype(np.dtype('uint8'))
 
 
 def load_video(file_path: Path):
@@ -72,17 +86,22 @@ def load_video(file_path: Path):
     return stacked_array, count
 
 
-def process_video():
+def process_video(video_path: Optional[Path] = None,
+                  use_mean: Optional[bool] = True,
+                  use_std: Optional[bool] = True,
+                  use_median: Optional[bool] = False,
+                  use_mode: Optional[bool] = False):
 
-    mean_image, median_image, mode_image = calculate_images(VIDEO_PATH)
-    cv.imwrite(VIDEO_PATH.joinpath('Mean.tif'), mean_image)
-    cv.imwrite(VIDEO_PATH.joinpath('Median.tif'), median_image)
-    cv.imwrite(VIDEO_PATH.joinpath('Mode.tif'), mode_image)
+    if video_path is None:
+        video_path = gf.get_path_dialog('Choose video file')
+    ret = calculate_images(video_path, use_mean, use_std, use_median, use_mode)
+
+    for key in ret:
+        if ret[key] is not None:
+            save_path = str(video_path.parent.joinpath(f'{key}.tif'))
+            cv.imwrite(save_path, ret[key])
 
 
 if __name__ == "__main__":
 
-    mean_image1, median_image1, mode_image1 = calculate_images(VIDEO_PATH)
-    cv.imwrite(VIDEO_PATH.joinpath('Mean.tif'), mean_image1)
-    cv.imwrite(VIDEO_PATH.joinpath('Median.tif'), median_image1)
-    cv.imwrite(VIDEO_PATH.joinpath('Mode.tif'), mode_image1)
+    process_video()

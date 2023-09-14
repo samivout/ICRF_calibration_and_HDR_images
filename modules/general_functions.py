@@ -312,7 +312,6 @@ def interpolate_frames(x0, x1, exp):
 def linearize_ImageSet(imageSet: ImageSet,
                        ICRF: np.ndarray,
                        ICRF_diff: Optional[np.ndarray] = None,
-                       STD_arr: Optional[np.ndarray] = None,
                        gaussian_blur: Optional[bool] = True):
     """
     Linearizes an input image using an ICRF. Additionally, if a derivative of
@@ -329,27 +328,28 @@ def linearize_ImageSet(imageSet: ImageSet,
         error image.
     """
     acq = imageSet.acq
+    std = imageSet.std
     channels = np.shape(imageSet.acq)[2]
 
     use_std = False
-    if ICRF_diff is not None and STD_arr is not None:
+    if ICRF_diff is not None and std is not None:
         use_std = True
 
     acq_new = np.zeros(np.shape(imageSet.acq), dtype=np.dtype('float32'))
     if use_std:
         std_new = np.zeros(np.shape(imageSet.acq), dtype=np.dtype('float32'))
 
-    def channel_loop(acq_c: np.ndarray, ICRF_c: np.ndarray, ICRF_diff_c: np.ndarray,
-                     STD_arr_c: np.ndarray, gauss: bool):
+    def channel_loop(acq_c: np.ndarray, ICRF_c: np.ndarray, std_c: np.ndarray,
+                     ICRF_diff_c: np.ndarray, gauss: bool):
 
-        ret = linearize_channel(acq_c, ICRF_c, ICRF_diff_c, STD_arr_c, gauss)
+        ret = linearize_channel(acq_c, ICRF_c, std_c, ICRF_diff_c, gauss)
 
         return ret
 
     if use_std:
-        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq[:, :, c], ICRF[:, c], ICRF_diff[:, c], STD_arr[:, c], gaussian_blur) for c in range(channels))
+        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq[:, :, c], ICRF[:, c], std[:, :, c], ICRF_diff[:, c], gaussian_blur) for c in range(channels))
     else:
-        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq[:, :, c], ICRF_c=ICRF[:, c], ICRF_diff_c=None, STD_arr_c=None, gauss=gaussian_blur) for c in range(channels))
+        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq_c=acq[:, :, c], ICRF_c=ICRF[:, c], std_c=None, ICRF_diff_c=None, gauss=gaussian_blur) for c in range(channels))
 
     for c in range(channels):
         channel_res = sub_results[c]
@@ -369,27 +369,26 @@ def linearize_ImageSet(imageSet: ImageSet,
 
 def linearize_channel(channel: np.ndarray,
                       ICRF: np.ndarray,
+                      channel_std: Optional[np.ndarray] = None,
                       ICRF_diff: Optional[np.ndarray] = None,
-                      STD_arr: Optional[np.ndarray] = None,
                       gaussian_blur: Optional[bool] = True):
 
     channel = (np.around(channel * MAX_DN)).astype(int)
-    linear_channel = ICRF[channel]
+    linear_channel = (ICRF[channel]).astype(np.dtype('float32'))
+    if gaussian_blur:
+        linear_channel = gaussian_filter(linear_channel, sigma=1)
 
     use_std = False
-    if ICRF_diff is not None and STD_arr is not None:
+    if ICRF_diff is not None and channel_std is not None:
         use_std = True
 
     if not use_std:
         return [linear_channel]
 
-    if use_std:
-        linear_std = ICRF_diff[channel] * STD_arr[channel]
+    linear_std = (ICRF_diff[channel] * channel_std).astype(np.dtype('float32'))
 
     if gaussian_blur:
-        linear_channel = gaussian_filter(linear_channel, sigma=1)
-        if use_std:
-            linear_std = gaussian_filter(linear_std, sigma=1)
+        linear_std = gaussian_filter(linear_std, sigma=1)
 
     return [linear_channel, linear_std]
 
@@ -415,7 +414,7 @@ def create_imageSets(path: Path):
     return list_of_ImageSets
 
 
-def create_imageSet_dialog(title: str):
+def get_path_dialog(title: str):
     file = None
 
     def open_file_dialog(w):
@@ -430,8 +429,7 @@ def create_imageSet_dialog(title: str):
     webview.start(open_file_dialog, window)
     # file will either be a string or None
     if file is not None:
-        imageSet = ImageSet(Path(file))
-        return imageSet
+        return Path(file)
 
     return
 

@@ -24,6 +24,7 @@ DATAPOINTS = rd.read_config_single('final datapoints')
 DATA_MULTIPLIER = DATAPOINTS / BITS
 DATAPOINT_MULTIPLIER = rd.read_config_single('datapoint multiplier')
 STD_FILE_NAME = rd.read_config_single('STD data')
+AVERAGED_FRAMES = rd.read_config_single('averaged frames')
 
 # From camera_data_tools.py
 MEAN_DATA_FILES = rd.read_config_list('camera mean data')

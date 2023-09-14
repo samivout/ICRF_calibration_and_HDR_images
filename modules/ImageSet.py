@@ -84,7 +84,7 @@ class ImageSet(object):
 
         std_path = str(self.path).removesuffix('.tif') + ' STD.tif'
         try:
-            self.std = cv.imread(std_path).astype(np.float32) / (MAX_DN * math.sqrt(67))
+            self.std = np.sqrt(cv.imread(std_path).astype(np.float32) / (AVERAGED_FRAMES)) / MAX_DN
 
         except (FileNotFoundError, AttributeError) as e:
             self.std = calculate_numerical_STD((np.around(self.acq * MAX_DN)).astype(np.dtype('uint8')),
@@ -149,7 +149,7 @@ class ImageSet(object):
         cv.imwrite(file_path, bit8_image)
 
         if self.std is not None:
-            bit8_image = (np.around(self.std * MAX_DN * math.sqrt(67))).astype(np.dtype('uint8'))
+            bit8_image = (np.around((self.std ** 2) * MAX_DN * AVERAGED_FRAMES)).astype(np.dtype('uint8'))
             cv.imwrite(file_path.removesuffix('.tif') + ' STD.tif', bit8_image)
 
 

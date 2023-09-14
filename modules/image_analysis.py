@@ -77,13 +77,12 @@ def analyze_linearity(path: Path,
                 if ratio < 0.05:
                     break
 
+                y = gf.multiply_imageSets(y, ratio, use_std=use_std)
+                linearSet = gf.subtract_imageSets(x, y, use_std=use_std, lower=lower,
+                                                  upper=upper)
                 if use_relative:
                     linearSet = gf.divide_imageSets(x, y, use_std=use_std, lower=lower,
                                                     upper=upper)
-                else:
-                    y = gf.multiply_imageSets(y, ratio, use_std=use_std)
-                    linearSet = gf.subtract_imageSets(x, y, use_std=use_std, lower=lower,
-                                                      upper=upper)
 
                 for c in range(CHANNELS):
                     base_acq = linearSet.acq[:, :, c]
@@ -91,9 +90,9 @@ def analyze_linearity(path: Path,
 
                     if use_relative:
                         if absolute_result:
-                            acq = abs(base_acq - ratio) / ratio
+                            acq = abs(base_acq - 1)
                         else:
-                            acq = (base_acq - ratio) / ratio
+                            acq = base_acq - 1
                     else:
                         if absolute_result:
                             acq = abs(base_acq * MAX_DN)
@@ -107,7 +106,7 @@ def analyze_linearity(path: Path,
                         base_std = linearSet.std[:, :, c]
 
                         if use_relative:
-                            std = base_std / ratio
+                            std = base_std
                         else:
                             std = base_std * MAX_DN
 
@@ -175,9 +174,11 @@ def linearity_distribution(long_imageSet: Optional[ImageSet] = None,
             or a relative value.
     """
     if long_imageSet is None:
-        long_imageSet = gf.create_imageSet_dialog('Choose long exposure image')
+        long_imageSet_path = gf.get_path_dialog('Choose long exposure image')
+        long_imageSet = ImageSet(long_imageSet_path)
     if short_imageSet is None:
-        short_imageSet = gf.create_imageSet_dialog('Choose short exposure image')
+        short_imageSet_path = gf.get_path_dialog('Choose short exposure image')
+        short_imageSet = ImageSet(short_imageSet_path)
 
     if long_imageSet.exp > short_imageSet.exp:
         x = short_imageSet
@@ -213,11 +214,12 @@ def linearity_distribution(long_imageSet: Optional[ImageSet] = None,
             y.std = gf.choose_evenly_spaced_points(y.std, num)
             x.std = gf.choose_evenly_spaced_points(x.std, num)
 
+    y = gf.multiply_imageSets(y, ratio, use_std=use_std)
+    linearSet = gf.subtract_imageSets(x, y, use_std=use_std, lower=lower,
+                                      upper=upper)
     if use_relative:
-        linearSet = gf.divide_imageSets(x, y, use_std=use_std, lower=lower, upper=upper)
-    else:
-        y = gf.multiply_imageSets(y, ratio, use_std=use_std)
-        linearSet = gf.subtract_imageSets(x, y, use_std=use_std, lower=lower, upper=upper)
+        linearSet = gf.divide_imageSets(x, y, use_std=use_std, lower=lower,
+                                        upper=upper)
 
     linearSet.path = save_dir.joinpath(f'{x.exp}-{y.exp} {y.subject}.tif')
 
@@ -232,9 +234,9 @@ def linearity_distribution(long_imageSet: Optional[ImageSet] = None,
         finite_indices = np.isfinite(base_acq)
 
         if use_relative:
-            acq = (base_acq - ratio)/ratio
+            acq = base_acq
         else:
-            acq = np.around((base_acq * MAX_DN)).astype(int)
+            acq = (base_acq * MAX_DN)
         bins = 200
 
         hist, bin_edges = np.histogram(acq[finite_indices], bins=bins)
@@ -271,7 +273,7 @@ def linearity_distribution(long_imageSet: Optional[ImageSet] = None,
 
 if __name__ == "__main__":
 
-    linearity_distribution(lower=5/255, upper=250/255, use_std=True,
-                           save_image=True, use_relative=False)
+    linearity_distribution(lower=5/255, upper=250/255, use_std=False,
+                           save_image=True, use_relative=True)
 
     print('Run script from actual main file!')
