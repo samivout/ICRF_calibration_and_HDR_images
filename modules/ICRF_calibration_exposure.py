@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize._differentialevolution import DifferentialEvolutionSolver
+from scipy.optimize import minimize
 import general_functions as gf
 from typing import Optional
 from typing import List
@@ -26,7 +27,8 @@ def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
     Return:
         The new iteration of the inverse camera response function.
     """
-    product = np.matmul(PCA_array, PCA_params)
+    mean_ICRF = np.linspace(0, 1, BITS) ** PCA_params[0]
+    product = np.matmul(PCA_array, PCA_params[1:])
     iterated_ICRF = mean_ICRF + product
 
     return iterated_ICRF
@@ -42,14 +44,15 @@ def analyze_linearity(sublists_of_imageSets: List[List[ImageSet]],
     Returns:
     """
     results = []
-    lower = 5 / MAX_DN
-    upper = 250 / MAX_DN
+    lower = 5/MAX_DN
+    upper = 250/MAX_DN
 
+    '''
     range_step = (upper - lower) / 3
-
     low_range = [lower, range_step]
     mid_range = [range_step, 2*range_step]
     high_range = [2*range_step, upper]
+    '''
 
     for sublist in sublists_of_imageSets:
 
@@ -69,19 +72,23 @@ def analyze_linearity(sublists_of_imageSets: List[List[ImageSet]],
                 if ratio < 0.05:
                     break
 
+                range_mask = (y.acq < lower) | (y.acq > upper)
+                y.acq[range_mask] = np.nan
+                range_mask = (x.acq < lower) | (x.acq > upper)
+                x.acq[range_mask] = np.nan
+                del range_mask
+
                 y = gf.multiply_imageSets(y, ratio, use_std=False)
-                linearSet = gf.subtract_imageSets(x, y, use_std=False, lower=lower,
-                                                  upper=upper)
+                linearSet = gf.subtract_imageSets(x, y, use_std=False)
 
                 if use_relative:
-                    linearSet = gf.divide_imageSets(x, y, use_std=False, lower=lower,
-                                                    upper=upper)
+                    linearSet = gf.divide_imageSets(linearSet, y, use_std=False)
 
                 if use_relative:
-                    acq = abs(linearSet.acq - 1)
+                    acq = abs(linearSet.acq)
                 else:
                     acq = abs(linearSet.acq * MAX_DN)
-
+                '''
                 where = (low_range[0] < x.acq) & (x.acq < low_range[1]) &\
                         (low_range[0] < y.acq) & (y.acq < low_range[1])
                 low_channel_mean = np.nanmean(acq[where])
@@ -98,6 +105,8 @@ def analyze_linearity(sublists_of_imageSets: List[List[ImageSet]],
 
                 # result = max(low_channel_mean, mid_channel_mean, high_channel_mean)
                 result = np.nanmean(res_arr)
+                '''
+                result = np.nanmean(acq)
                 results.append(result)
 
     data_array = np.array(results)
@@ -123,7 +132,13 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, acq_sublists, channel):
     ICRF[:, channel] = _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params)
     ICRF[:, channel] += 1 - ICRF[-1, channel]
     ICRF[0, channel] = 0
+
     if np.max(ICRF[:, channel]) > 1 or np.min(ICRF[:, channel]) < 0:
+        energy = np.inf
+        return energy
+
+    ICRF_ch = ICRF[:, channel]
+    if not np.all(ICRF_ch[1:] > ICRF_ch[:-1]):
         energy = np.inf
         return energy
 
@@ -131,10 +146,28 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, acq_sublists, channel):
     for sublist in acq_sublists_iter:
         for imageSet in sublist:
 
-            gf.linearize_ImageSet(imageSet, ICRF[:, [channel]], ICRF_diff=None, gaussian_blur=True)
+            gf.linearize_ImageSet(imageSet, ICRF[:, [channel]], ICRF_diff=None, gaussian_blur=False)
+
+    linearity_data = analyze_linearity(acq_sublists_iter, use_relative=True)
+    energy = np.nanmean(linearity_data)
+    if np.isnan(energy):
+        energy = np.Inf
+
+    return energy
+
+
+def _initial_energy_function(x, acq_sublists, channel):
+
+    initial_function = np.linspace(0, 1, BITS) ** x
+    initial_function = np.expand_dims(initial_function, axis=1)
+
+    acq_sublists_iter = gf.copy_nested_list(acq_sublists, channel)
+    for sublist in acq_sublists_iter:
+        for imageSet in sublist:
+            gf.linearize_ImageSet(imageSet, initial_function, ICRF_diff=None, gaussian_blur=False)
 
     linearity_data = analyze_linearity(acq_sublists_iter)
-    energy = np.mean(linearity_data)
+    energy = np.nanmean(linearity_data)
     if np.isnan(energy):
         energy = np.Inf
 
@@ -178,10 +211,11 @@ def calibration(lower_limit, upper_limit,
             final_energy_array: a Numpy float array containing the final
                 energies of each channel.
        """
+    global ICRF
     final_energy_array = np.zeros(CHANNELS, dtype=float)
     initial_energy_array = np.zeros(CHANNELS, dtype=float)
 
-    limits = [[lower_limit, upper_limit], [lower_limit, upper_limit],
+    limits = [[0.1, 6],[lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit], [lower_limit, upper_limit],
               [lower_limit, upper_limit]]
 
@@ -190,7 +224,7 @@ def calibration(lower_limit, upper_limit,
     acq_list = gf.create_imageSets(ACQ_PATH)
     for imageSet in acq_list:
         imageSet.load_acq()
-        imageSet.acq = gf.choose_evenly_spaced_points(imageSet.acq, 250)
+        imageSet.acq = gf.choose_evenly_spaced_points(imageSet.acq, 150)
     acq_sublists = gf.separate_to_sublists(acq_list)
     for sublist in acq_sublists:
         sublist.sort(key=lambda imageSet: imageSet.exp)
@@ -198,7 +232,7 @@ def calibration(lower_limit, upper_limit,
 
     for i in range(len(MEAN_DATA_FILES)):
         # Get the filenames from the attribute arrays.
-        PCA_file_name = PRINCIPAL_COMPONENT_FILES[i]
+        PCA_file_name = PCA_FILES[i]
         mean_ICRF_file_name = MEAN_ICRF_FILES[i]
 
         # Load mean data, principal component data and mean ICRF data into
@@ -210,18 +244,37 @@ def calibration(lower_limit, upper_limit,
         else:
             mean_ICRF_array = initial_function
         '''
-        if i == 0:
-            limit = 0.29
-        if i == 1:
-            limit = 0.75
-        if i == 2:
-            limit = 0.34
+        initial_mean = _energy_function(IN_PCA_GUESS, mean_ICRF_array, PCA_array, acq_sublists, i)
+        initial1 = _initial_energy_function(1, acq_sublists, i)
+        initial2 = _initial_energy_function(1.5, acq_sublists, i)
+        initial3 = _initial_energy_function(1.75, acq_sublists, i)
+        print(initial_mean, initial1, initial2, initial3)
+        '''
+
+        '''
+        
+        with DifferentialEvolutionSolver(_initial_energy_function, [[0.5, 4]], args=(acq_sublists, i),
+                                         strategy='rand1bin', tol=0.0001,
+                                         x0=[1]) as solver:
+            for step in solver:
+                step = next(solver)  # Returns a tuple of xk and func evaluation
+                func_value = step[1]  # Retrieves the func evaluation
+                if solver.converged():
+                    break
+
+        exponent = solver.x[0]
+        del solver
+        print(exponent)
+        mean_ICRF_array = np.linspace(0, 1, BITS) ** exponent
         '''
         limit = 0.1
 
+        # Access DifferentialEvolutionSolver directly to stop iteration if
+        # solution has converged or energy function value is under given limit.
         with DifferentialEvolutionSolver(_energy_function, limits, args=(
             mean_ICRF_array, PCA_array, acq_sublists, i),
-                                         strategy='best1bin', tol=0.3) as solver:
+                                         strategy='best1bin', tol=0.01,
+                                         x0=[1, 0, 0, 0, 0, 0]) as solver:
             for step in solver:
                 step = next(solver)  # Returns a tuple of xk and func evaluation
                 func_value = step[1]  # Retrieves the func evaluation
@@ -230,16 +283,20 @@ def calibration(lower_limit, upper_limit,
                     break
 
         result = solver.x
+        ICRF[:, i] = _inverse_camera_response_function(mean_ICRF_array, PCA_array, result)
+
         del solver
         print(f'Result: f{result}')
         '''
-        evaluation = _energy_function(solution, mean_ICRF_array[:, i],
-                                      PCA_array[:, :, i], acq_sublists, i)
-        final_energy_array[i] = evaluation
-        print('Solution: f(%s) = %.5f' % (solution, evaluation))
+        result = minimize(_energy_function, IN_PCA_GUESS, method='nelder-mead',
+                          args=(mean_ICRF_array, PCA_array, acq_sublists, i),
+                          bounds=limits, options={'maxiter': 10000})
+        print(result)
         '''
     ICRF_array = ICRF
 
+    # The ICRF might be shifted on the y-axis, so we adjust it back to [0,1]
+    # here.
     ICRF_array[:, 0] += 1 - ICRF_array[-1, 0]
     ICRF_array[:, 1] += 1 - ICRF_array[-1, 1]
     ICRF_array[:, 2] += 1 - ICRF_array[-1, 2]
@@ -248,7 +305,10 @@ def calibration(lower_limit, upper_limit,
     ICRF_array[0, 1] = 0
     ICRF_array[0, 2] = 0
 
+    # Clipping values just in case. Shouldn't be needed as the ICRF should be
+    # continuously increasing between [0,1] without going outside that interval.
     ICRF_array[ICRF_array < 0] = 0
+    ICRF_array[ICRF_array > 1] = 1
 
     ICRF_interpolated = interpolate_ICRF(ICRF_array)
 

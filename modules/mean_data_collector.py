@@ -3,7 +3,7 @@ import cv2 as cv
 from global_settings import *
 
 
-def _process_videos(path: Path):
+def _process_videos(path: Path, use_mean: bool = True):
     """
     Overview the data collection process. Load one video file at a time, process
     it and add the data to a collective data array after each video file.
@@ -23,9 +23,20 @@ def _process_videos(path: Path):
         image_list = _load_images(file)
         channel_separated_images = _separate_channels(image_list)
 
-        data_array += _calculate_mean_data(channel_separated_images)
+        data_array += _calculate_mean_data(channel_separated_images, use_mean)
 
     return data_array
+
+
+def _to_lbgr(frame: np.ndarray):
+
+    lows = (frame <= 0.04045)
+    highs = np.logical_not(lows)
+
+    frame[lows] = frame[lows] / 12.92
+    frame[highs] = ((frame[highs] + 0.055) / 1.055) ** 2.4
+
+    return frame
 
 
 def _load_images(file_path: Path):
@@ -45,6 +56,7 @@ def _load_images(file_path: Path):
         ret, frame = video.read()
         if not ret:
             continue
+        frame = np.around((_to_lbgr(frame/MAX_DN) * MAX_DN).astype(np.dtype('uint8')))
         image_list.append(frame)
         count = count + 1
         if count > (video_frames - 1):
@@ -85,7 +97,7 @@ def _separate_channels(images):
     return [blue_arr, green_arr, red_arr]
 
 
-def _calculate_mean_data(separated_channels_list):
+def _calculate_mean_data(separated_channels_list, use_mean):
     """
     Calculates the histogram of a pixel position in an image, for each channel
     separately. The histogram is summed into a bits*bits*channels data array on
@@ -99,7 +111,8 @@ def _calculate_mean_data(separated_channels_list):
     """
 
     data_array = np.zeros((BITS, BITS, CHANNELS), dtype=int)
-    weight = np.linspace(MIN_DN, MAX_DN, num=BITS)
+    if use_mean:
+        weight = np.linspace(MIN_DN, MAX_DN, num=BITS)
 
     for index, channel in enumerate(separated_channels_list):
         for row in range(IM_SIZE_Y):
@@ -108,8 +121,10 @@ def _calculate_mean_data(separated_channels_list):
                 hist = np.histogram(
                     channel[row, col, :], BITS, (MIN_DN, MAX_DN))[0]
 
-                # row = round(np.sum(np.multiply(hist, weight)) / np.sum(hist))
-                row = np.argmax(hist)
+                if use_mean:
+                    row = round(np.sum(np.multiply(hist, weight)) / np.sum(hist))
+                else:
+                    row = np.argmax(hist)
 
                 data_array[row, :, index] += hist
 
@@ -122,15 +137,19 @@ def collect_mean_data():
     process and save the data into three different files.
     :return:
     """
-
-    data_array = _process_videos(VIDEO_PATH)
+    mean_path = OUTPUT_DIRECTORY.joinpath('mean')
+    modal_path = OUTPUT_DIRECTORY.joinpath('modal')
+    data_array = _process_videos(VIDEO_PATH, use_mean=True)
     for index, file_name in enumerate(MEAN_DATA_FILES):
 
-        np.savetxt(OUTPUT_DIRECTORY.joinpath(file_name), data_array[:, :, index], fmt='%i')
+        np.savetxt(mean_path.joinpath(file_name), data_array[:, :, index], fmt='%i')
+
+    data_array = _process_videos(VIDEO_PATH, use_mean=False)
+    for index, file_name in enumerate(MEAN_DATA_FILES):
+
+        np.savetxt(modal_path.joinpath(file_name), data_array[:, :, index], fmt='%i')
 
 
 if __name__ == "__main__":
 
-    data_matrix = _process_videos(VIDEO_PATH)
-    for i, file in enumerate(MEAN_DATA_FILES):
-        np.savetxt(file, data_matrix[:, :, i], fmt='%i')
+    collect_mean_data()

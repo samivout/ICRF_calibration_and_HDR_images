@@ -9,6 +9,12 @@ def _calculate_principal_components(covariance_array):
     PCA_array.fit(covariance_array)
     result = PCA_array.transform(covariance_array)
 
+    # Scale to unit vector and shift to start and end at zero.
+    for n in range(NUM_OF_PCA_PARAMS):
+        norm = np.linalg.norm(result[:, n])
+        result[:, n] /= norm
+        result[:, n] -= result[0, n]
+
     return result
 
 
@@ -27,13 +33,14 @@ def _calculate_covariance_matrix(data_array, mean_data_array):
             the covariance matrix calculated for the given data.
     """
     covariance_array = np.zeros((DATAPOINTS, DATAPOINTS), dtype=float)
+    number_of_ICRFs = np.shape(data_array)[0]
 
     for i in range(DATAPOINTS):
         for j in range(DATAPOINTS):
 
             running_sum = 0
 
-            for k in range(CHANNELS + 1):
+            for k in range(number_of_ICRFs):
 
                 running_sum += (data_array[k, i] - mean_data_array[i]) * (
                         data_array[k, j] - mean_data_array[j])
@@ -62,7 +69,7 @@ def analyze_principal_components():
 
         PCA_array = _calculate_principal_components(covariance_matrix)
 
-        np.savetxt(data_directory.joinpath(PRINCIPAL_COMPONENT_FILES[i]), PCA_array)
+        np.savetxt(data_directory.joinpath(PCA_FILES[i]), PCA_array)
 
     return
 

@@ -6,6 +6,7 @@ from typing import List
 from typing import Optional
 from scipy.ndimage.filters import gaussian_filter
 from joblib import delayed, parallel
+import cv2 as cv
 from global_settings import*
 
 
@@ -80,8 +81,8 @@ def copy_nested_list(list_of_sublists: List[List[ImageSet]],
 
 def divide_imageSets(im0: ImageSet, im1: ImageSet | float,
                      use_std: Optional[bool] = False,
-                     lower: Optional[float] = 0,
-                     upper: Optional[float] = 1):
+                     lower: Optional[float] = None,
+                     upper: Optional[float] = None):
     """
     Calculates the division of two images using ImageSet objects. Can also
     calculate error of the division. At pixels whose value for either the
@@ -102,10 +103,16 @@ def divide_imageSets(im0: ImageSet, im1: ImageSet | float,
 
     if both_imageSets:
         x1 = im1.acq
-        where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+        if lower is not None and upper is not None:
+            where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+        else:
+            where = True
     else:
         x1 = im1
-        where = (lower < x0) & (x0 < upper)
+        if lower is not None and upper is not None:
+            where = (lower < x0) & (x0 < upper)
+        else:
+            where = True
 
     division = np.divide(x0, x1, out=np.full_like(x0, np.nan), where=where)
     division_std = None
@@ -134,8 +141,8 @@ def divide_imageSets(im0: ImageSet, im1: ImageSet | float,
 
 def multiply_imageSets(im0: ImageSet, im1: ImageSet | float,
                        use_std: Optional[bool] = False,
-                       lower: Optional[float] = 0,
-                       upper: Optional[float] = 1):
+                       lower: Optional[float] = None,
+                       upper: Optional[float] = None):
     """
     Calculates the product of two images using ImageSet objects. Can also
     calculate error of the division. At pixels whose value for either the
@@ -156,10 +163,16 @@ def multiply_imageSets(im0: ImageSet, im1: ImageSet | float,
 
     if both_imageSets:
         x1 = im1.acq
-        where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+        if lower is not None and upper is not None:
+            where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+        else:
+            where = True
     else:
         x1 = im1
-        where = (lower < x0) & (x0 < upper)
+        if lower is not None and upper is not None:
+            where = (lower < x0) & (x0 < upper)
+        else:
+            where = True
 
     product = np.multiply(x0, x1, out=np.full_like(x0, np.nan), where=where)
     product_std = None
@@ -185,8 +198,8 @@ def multiply_imageSets(im0: ImageSet, im1: ImageSet | float,
 
 def add_imageSets(im0: ImageSet, im1: ImageSet | float,
                   use_std: Optional[bool] = False,
-                  lower: Optional[float] = 0,
-                  upper: Optional[float] = 1):
+                  lower: Optional[float] = None,
+                  upper: Optional[float] = None):
     """
     Calculates the sum of two ImageSet objects with errors if desired. Pixels
     whose value falls outside the lower and upper limits are set to NaN.
@@ -205,10 +218,16 @@ def add_imageSets(im0: ImageSet, im1: ImageSet | float,
 
     if both_imageSets:
         x1 = im1.acq
-        where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+        if lower is not None and upper is not None:
+            where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+        else:
+            where = True
     else:
         x1 = im1
-        where = (lower < x0) & (x0 < upper)
+        if lower is not None and upper is not None:
+            where = (lower < x0) & (x0 < upper)
+        else:
+            where = True
 
     addition = np.add(x0, x1, out=np.full_like(x0, np.nan), where=where)
     addition_std = None
@@ -231,8 +250,8 @@ def add_imageSets(im0: ImageSet, im1: ImageSet | float,
 
 def subtract_imageSets(im0: ImageSet, im1: ImageSet | float,
                        use_std: Optional[bool] = False,
-                       lower: Optional[float] = 0,
-                       upper: Optional[float] = 1):
+                       lower: Optional[float] = None,
+                       upper: Optional[float] = None):
     """
     Calculates the subtraction of two ImageSet objects with errors if desired.
     Pixels whose value falls outside the lower and upper limits are set to NaN.
@@ -251,10 +270,16 @@ def subtract_imageSets(im0: ImageSet, im1: ImageSet | float,
 
     if both_imageSets:
         x1 = im1.acq
-        where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+        if lower is not None and upper is not None:
+            where = (lower < x1) & (x1 < upper) & (lower < x0) & (x0 < upper)
+        else:
+            where = True
     else:
         x1 = im1
-        where = (lower < x0) & (x0 < upper)
+        if lower is not None and upper is not None:
+            where = (lower < x0) & (x0 < upper)
+        else:
+            where = True
 
     subtraction = np.subtract(x0, x1, out=np.full_like(x0, np.nan), where=where)
     subtraction_std = None
@@ -414,7 +439,22 @@ def create_imageSets(path: Path):
     return list_of_ImageSets
 
 
-def get_path_dialog(title: str):
+def show_image(input_image: Optional[ImageSet] = None):
+
+    if input_image is None:
+        image_path = get_filepath_dialog('Choose image to show')
+        input_image = ImageSet(image_path)
+
+    input_image.load_acq()
+    input_image.path = Path(input_image.path.parent.joinpath(input_image.path.name.replace('.tif', 'sbgr.tif')))
+    input_image.save_8bit(sbgr=False)
+    cv.namedWindow(input_image.path.name, cv.WINDOW_NORMAL)
+    cv.imshow(input_image.path.name, input_image.acq)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+
+
+def get_filepath_dialog(title: str):
     file = None
 
     def open_file_dialog(w):

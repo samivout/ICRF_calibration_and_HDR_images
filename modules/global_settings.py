@@ -8,6 +8,7 @@ module_directory = rd.current_directory
 # From HDR_image.py
 IM_SIZE_X = rd.read_config_single('image size x')
 IM_SIZE_Y = rd.read_config_single('image size y')
+PIXEL_COUNT = IM_SIZE_Y * IM_SIZE_Y
 DEFAULT_ACQ_PATH = Path(rd.read_config_single('acquired images path'))
 FLAT_PATH = Path(rd.read_config_single('flat fields path'))
 OG_FLAT_PATH = Path(rd.read_config_single('original flat fields path'))
@@ -39,7 +40,7 @@ MEAN_ICRF_FILES = rd.read_config_list('mean ICRFs')
 # From ICRF_calibration_exposure.py
 OUTPUT_DIRECTORY = module_directory.parent.joinpath('output')
 NUM_OF_PCA_PARAMS = rd.read_config_single('number of principal components')
-PRINCIPAL_COMPONENT_FILES = rd.read_config_list('principal components')
+PCA_FILES = rd.read_config_list('principal components')
 ACQ_PATH = Path(rd.read_config_single('acquired images path'))
 
 # From image_correction.py
@@ -56,5 +57,5 @@ IN_PCA_GUESS = rd.read_config_list('initial guess')
 VIDEO_PATH = Path(rd.read_config_single('video path'))
 
 # New
-LOWER_LIN_LIM = rd.read_config_single('lower linearity limit')/MAX_DN
-UPPER_LIN_LIM = rd.read_config_single('upper linearity limit')/MAX_DN
+LOWER_LIN_LIM = rd.read_config_single('lower linearity limit')
+UPPER_LIN_LIM = rd.read_config_single('upper linearity limit')

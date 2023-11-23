@@ -72,7 +72,8 @@ def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
                        pass_linear: Optional[bool] = False,
                        fix_artifacts: Optional[bool] = True,
                        ICRF: Optional[np.ndarray] = None,
-                       STD_data: Optional[np.ndarray] = None):
+                       STD_data: Optional[np.ndarray] = None,
+                       gaussian_blur: Optional[bool] = True):
 
     if ICRF is None:
         ICRF = rd.read_data_from_txt(ICRF_CALIBRATED_FILE)
@@ -112,7 +113,7 @@ def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
                 imageSet.load_acq()
                 imageSet.load_std()
 
-            imageSet = gf.linearize_ImageSet(imageSet, ICRF, ICRF_diff)
+            imageSet = gf.linearize_ImageSet(imageSet, ICRF, ICRF_diff, gaussian_blur)
             if save_linear:
                 if save_8bit:
                     imageSet.save_8bit(OUT_PATH.joinpath(imageSet.path.name))

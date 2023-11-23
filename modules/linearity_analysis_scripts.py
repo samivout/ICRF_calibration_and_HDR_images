@@ -71,7 +71,7 @@ def save_and_plot_ICRF(ICRF_array: np.ndarray, name: str, path: Path):
 
 
 def large_linearity_analysis(heights: Optional[List[int]] = None,
-                             data_paths: Optional[List[str]] = [data_directory],
+                             data_paths: Optional[List[Path]] = [data_directory],
                              include_gamma: Optional[bool] = False,
                              powers: Optional[List[float]] = None):
     """
@@ -124,7 +124,9 @@ def large_linearity_analysis(heights: Optional[List[int]] = None,
                                                 sublists_of_imageSets=acq_sublists,
                                                 pass_results=pass_results,
                                                 STD_data=STD_data,
-                                                save_path=scatter_path)
+                                                save_path=scatter_path,
+                                                relative_scale=use_relative,
+                                                absolute_result=absolute_result)
 
         if init_func is None:
             results.append(f"Mean\t{height}\t{duration}\t{linearity_result[-1]}")
@@ -140,6 +142,8 @@ def large_linearity_analysis(heights: Optional[List[int]] = None,
     pass_linear = True
     fix_artifacts = False
     pass_results = True
+    use_relative = True
+    absolute_result = False
     results = []
 
     if heights is None:
@@ -181,15 +185,15 @@ def large_linearity_analysis(heights: Optional[List[int]] = None,
 def run_linearity_analysis():
 
     data_paths = [
-        r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Mean',
-        # r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal',
-        # r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\ND\Mean',
-        # r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\ND\Modal'
+        Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Mean'),
+        Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal'),
+        Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\ND\Mean'),
+        Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\ND\Modal')
     ]
     include_gamma = False
-    # heights = [1, 2, 5, 10, 20, 40, 80, 160]
-    heights = [10, 20]
+    heights = [1, 2, 5, 10, 20, 50, 100, 200, 500]
     powers = [1, 3]
+    powers = None
     large_linearity_analysis(heights=heights, data_paths=data_paths,
                              include_gamma=include_gamma, powers=powers)
 

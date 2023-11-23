@@ -3,7 +3,7 @@ from typing import Optional
 from global_settings import *
 
 
-def _read_dorf_data(file_path: Path, include_gamma: bool):
+def _read_dorf_data(file_path: Path, include_gamma: bool, color_split: bool):
     """ Load numerical data from a .txt file of the given name from the data
     directory. The dorfCurves.txt contains measured irradiance vs. digital
     number data for various cameras. In this function all the data is read in
@@ -45,6 +45,11 @@ def _read_dorf_data(file_path: Path, include_gamma: bool):
                         is_red = True
                         is_green = True
                         is_blue = True
+
+            if not color_split:
+                is_red = True
+                is_green = True
+                is_blue = True
 
             if number_of_lines % 6 == 0:
                 line_to_arr = np.fromstring(text, dtype=float, sep=' ')
@@ -130,7 +135,7 @@ def _calculate_mean_curve(list_of_curves):
     return list_of_curves
 
 
-def process_CRF_data(include_gamma: Optional[bool] = False):
+def process_CRF_data(include_gamma: Optional[bool] = False, color_split: Optional[bool] = True):
     """ Main function to be called outside the module, used to run the process
     of obtaining the CRFs from dorfCurves.txt, invert them and determine a mean
     ICRF, for each color channel separately.
@@ -139,7 +144,7 @@ def process_CRF_data(include_gamma: Optional[bool] = False):
             functions in the data. Defaults to False.
     """
     data_file_path = data_directory.joinpath(DORF_FILE)
-    list_of_curves = _read_dorf_data(data_file_path, include_gamma)
+    list_of_curves = _read_dorf_data(data_file_path, include_gamma, color_split)
     processed_curves = _invert_and_interpolate_data(list_of_curves, DATAPOINTS)
     list_of_mean_curves = processed_curves.copy()
     list_of_mean_curves = _calculate_mean_curve(list_of_mean_curves)

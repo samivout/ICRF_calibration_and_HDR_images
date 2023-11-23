@@ -283,7 +283,7 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
     for i in range(len(MEAN_DATA_FILES)):
         # Get the filenames from the attribute arrays.
         mean_file_name = MEAN_DATA_FILES[i]
-        PCA_file_name = PRINCIPAL_COMPONENT_FILES[i]
+        PCA_file_name = PCA_FILES[i]
         mean_ICRF_file_name = MEAN_ICRF_FILES[i]
 
         # Load mean data, principal component data and mean ICRF data into
@@ -307,7 +307,7 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
         result = differential_evolution(_energy_function, limits, args=(
             mean_ICRF_array, PCA_array, evaluation_heights, edge_distances),
                                         strategy='best1bin', disp=False,
-                                        maxiter=1000)
+                                        maxiter=10000)
 
         print('Status : %s' % result['message'])
         print('Total Evaluations: %d' % result['nfev'])

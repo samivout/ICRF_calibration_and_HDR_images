@@ -1,3 +1,4 @@
+import general_functions
 from modules import ICRF_calibration_noise as ICRF
 from modules import principal_component_analysis
 from modules import process_CRF_database
@@ -50,11 +51,11 @@ def calibrate_ICRF():
     return
 
 
-def calibrate_ICRF_e():
+def calibrate_ICRF_e(initial_function: Optional[np.ndarray] = None):
 
     x_range = np.linspace(0, 1, BITS)
     ICRF_array, initial_energy_array, final_energy_array = \
-        ICRF_e.calibration(LOWER_PCA_LIM, UPPER_PCA_LIM)
+        ICRF_e.calibration(LOWER_PCA_LIM, UPPER_PCA_LIM, initial_function)
 
     np.savetxt(OUTPUT_DIRECTORY.joinpath(f'ICRF_exp.txt'), ICRF_array)
 
@@ -74,11 +75,13 @@ def process_mdl():
     return
 
 
-def process_base_data(path: Optional[str] = None, include_gamma: Optional[bool] = False):
+def process_base_data(path: Optional[str] = None,
+                      include_gamma: Optional[bool] = False,
+                      color_split: Optional[bool] = True):
 
     cdt.clean_and_interpolate_data(path)
     STD.process_STD_data(pass_result=False)
-    process_CRF_database.process_CRF_data(include_gamma)
+    process_CRF_database.process_CRF_data(include_gamma, color_split)
     principal_component_analysis.analyze_principal_components()
 
     return
@@ -92,12 +95,14 @@ def process_HDR():
     save_HDR = False
     pass_linear = False
     fix_artifacts = False
+    gaussian_blur = False
     HDR.process_HDR_images(save_linear=save_linear,
                            save_HDR=save_HDR,
                            save_8bit=save_8bit,
                            save_32bit=save_32bit,
                            pass_linear=pass_linear,
-                           fix_artifacts=fix_artifacts)
+                           fix_artifacts=fix_artifacts,
+                           gaussian_blur=gaussian_blur)
 
     return
 
@@ -145,9 +150,14 @@ def large_linearity_analysis_noise(paths: Optional[List[str]] = [data_directory]
 def main():
 
     data_paths = [r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Mean',
-                  r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal']
+                  r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal',
+                  r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD-LBGR\mean']
+    analysis_path = Path(r'E:\Kouluhommat\MSc SPV\Mittaukset jne\Analysis\Modal data collector\File cache\Bias correction on\srgb mean')
+    init_func = np.linspace(0, 1, BITS) ** 5
+    ICRF = rd.read_data_from_txt(ICRF_CALIBRATED_FILE)
+
     # mdc.collect_mean_data()
-    # process_base_data(data_paths[0])
+    # process_base_data(data_paths[0], include_gamma=True, color_split=True)
     # calibrate_ICRF()
     # calibrate_ICRF_e()
     # process_mdl()
@@ -155,9 +165,11 @@ def main():
     process_HDR()
     # image_calculation.calibrate_dark_frames()
     # image_calculation.calibrate_flats()
-    # ia.analyze_linearity(OUT_PATH, use_std=True, absolute_result=False, use_relative=False)
-    # ia.analyze_linearity(ACQ_PATH, use_std=True, absolute_result=False, use_relative=True)
+    # ia.analyze_linearity(OUT_PATH, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True, ICRF=ICRF)
+    # ia.analyze_linearity(ACQ_PATH, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True)
+    # ia.analyze_linearity(analysis_path, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True)
     # large_linearity_analysis(data_paths)
+    # general_functions.show_image()
 
 
 main()

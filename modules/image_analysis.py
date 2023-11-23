@@ -14,8 +14,10 @@ def analyze_linearity(path: Path,
                       use_std: Optional[bool] = True,
                       STD_data: Optional[np.ndarray] = None,
                       save_path: Optional[Path] = None,
-                      use_relative: Optional[bool] = True,
-                      absolute_result: Optional[bool] = False):
+                      relative_scale: Optional[bool] = True,
+                      absolute_scale: Optional[bool] = True,
+                      absolute_result: Optional[bool] = False,
+                      ICRF: Optional[np.ndarray] = None):
     """
     Analyze the linearity of images taken at different exposures.
     Args:
@@ -26,14 +28,18 @@ def analyze_linearity(path: Path,
         sublists_of_imageSets: Optionally pass sublist from previous calculations
         STD_data: Array of the camera pixel error data
         save_path: path to which save plot of data
-        use_relative: whether to calculate as relative or absolute disparity.
+        relative_scale: whether to report result on a relative scale.
+        absolute_scale: whether to report result on an absolute scale
         absolute_result: whether to calculate results as (div - ratio)/ratio
             or abs(div - ratio)/ratio.
 
     Returns:
     """
+    # Save plotted figures to dir of images or a specified dir.
     if save_path is None:
         save_path = path.joinpath('scatter.png')
+    absolute_fig_path = save_path.parent.joinpath(save_path.name.replace(r'.png', r'_abs.png'))
+    relative_fig_path = save_path.parent.joinpath(save_path.name.replace(r'.png', r'_rel.png'))
 
     file_name = 'linearity_processed.txt'
     if sublists_of_imageSets is None:
@@ -43,14 +49,24 @@ def analyze_linearity(path: Path,
         file_name = 'linearity_og.txt'
 
     results = []
-    lower = LOWER_LIN_LIM
-    upper = UPPER_LIN_LIM
+    lower = np.array([LOWER_LIN_LIM, LOWER_LIN_LIM, LOWER_LIN_LIM], dtype=np.dtype('float32'))
+    upper = np.array([UPPER_LIN_LIM, UPPER_LIN_LIM, UPPER_LIN_LIM], dtype=np.dtype('float32'))
+    if ICRF is None:
+        lower = lower/MAX_DN
+        upper = upper/MAX_DN
+    else:
+        for c in range(CHANNELS):
+            lower[c] = ICRF[int(lower[c]), c]
+            upper[c] = ICRF[int(upper[c]), c]
 
+    # TODO: this is probably not needed at all. Depends on if I want to expand
+    #   error analysis to include ImageSet.std images.
     if use_std and STD_data is None:
         STD_data = read_data.read_data_from_txt(STD_FILE_NAME)
 
     for sublist in sublists_of_imageSets:
 
+        # Can't do much if there are less than two images eh?
         if len(sublist) < 2:
             continue
 
@@ -58,7 +74,7 @@ def analyze_linearity(path: Path,
         for imageSet in sublist:
             if imageSet.acq is None:
                 imageSet.load_acq()
-            if use_std:
+            if False:  # use_std
                 if imageSet.std is None:
                     imageSet.load_std(STD_data=STD_data)
 
@@ -70,70 +86,139 @@ def analyze_linearity(path: Path,
 
                 x = sublist[i]
                 y = sublist[j]
-                means = []
-                stds = []
+                abs_means = []
+                abs_stds = []
+                rel_means = []
+                rel_stds = []
 
                 ratio = x.exp / y.exp
-                if ratio < 0.05:
-                    break
+                #if ratio < 0.05:
+                #    break
 
-                y = gf.multiply_imageSets(y, ratio, use_std=use_std)
-                linearSet = gf.subtract_imageSets(x, y, use_std=use_std, lower=lower,
-                                                  upper=upper)
-                if use_relative:
-                    linearSet = gf.divide_imageSets(x, y, use_std=use_std, lower=lower,
-                                                    upper=upper)
+                # Set values that are outside the given threshold to NaN.
+                for c in range(CHANNELS):
+                    y_channel = y.acq[:, :, c]
+                    x_channel = x.acq[:, :, c]
+                    range_mask = (y_channel < lower[c]) | (y_channel > upper[c])
+                    y_channel[range_mask] = np.nan
+                    y.acq[:, :, c] = y_channel
+                    range_mask = (x_channel < lower[c]) | (x_channel > upper[c])
+                    x_channel[range_mask] = np.nan
+                    x.acq[:, :, c] = x_channel
+                del range_mask
+
+                y = gf.multiply_imageSets(y, ratio, use_std=False)
+                absoluteSet = gf.subtract_imageSets(x, y, use_std=False)
+                relativeSet = None
+
+                if relative_scale:
+                    relativeSet = gf.divide_imageSets(absoluteSet, y, use_std=False)
 
                 for c in range(CHANNELS):
-                    base_acq = linearSet.acq[:, :, c]
-                    finite_indices = np.isfinite(base_acq)
+                    absolute_channel = absoluteSet.acq[:, :, c]
+                    if relative_scale is not None:
+                        relative_channel = relativeSet.acq[:, :, c]
 
-                    if use_relative:
-                        if absolute_result:
-                            acq = abs(base_acq - 1)
-                        else:
-                            acq = base_acq - 1
-                    else:
-                        if absolute_result:
-                            acq = abs(base_acq * MAX_DN)
-                        else:
-                            acq = base_acq * MAX_DN
+                    # This section is used to check if enough of the pixels of
+                    # a channel are finite values. If not, then channel is skipped.
+                    finite_indices = np.isfinite(absolute_channel)
+                    finite_count = np.count_nonzero(finite_indices)
+                    if finite_count < PIXEL_COUNT*0.10:
+                        if relative_scale:
+                            rel_means.append(np.nan)
+                            if use_std:
+                                rel_stds.append(np.nan)
+                        if absolute_scale:
+                            abs_means.append(np.nan)
+                            if use_std:
+                                abs_stds.append(np.nan)
+                        print(f'Skipped with {finite_count} pixels.')
+                        continue
 
-                    channel_mean = np.mean(acq[finite_indices])
-                    means.append(channel_mean)
+                    rel_acq = None
+                    abs_acq = None
+
+                    if relative_scale:
+                        if absolute_result:
+                            rel_acq = abs(relative_channel)
+                        else:
+                            rel_acq = relative_channel
+                    if absolute_scale:
+                        if absolute_result:
+                            abs_acq = abs(absolute_channel * MAX_DN)
+                        else:
+                            abs_acq = absolute_channel * MAX_DN
+
+                    if abs_acq is not None:
+                        channel_abs_mean = np.mean(abs_acq[finite_indices])
+                        abs_means.append(channel_abs_mean)
+                    if rel_acq is not None:
+                        channel_rel_mean = np.mean(rel_acq[finite_indices])
+                        rel_means.append(channel_rel_mean)
 
                     if use_std:
-                        base_std = linearSet.std[:, :, c]
+                        # base_std = absoluteSet.std[:, :, c]
 
-                        if use_relative:
-                            std = base_std
-                        else:
-                            std = base_std * MAX_DN
+                        abs_std = None
+                        rel_std = None
 
-                        channel_std = np.mean(std[finite_indices])
-                        stds.append(channel_std)
+                        if relative_scale:
+                            rel_std = relative_channel
+                        if absolute_scale:
+                            abs_std = absolute_channel * MAX_DN
+
+                        if abs_std is not None:
+                            channel_abs_std = np.std(abs_std[finite_indices])
+                            abs_stds.append(channel_abs_std)
+                        if rel_std is not None:
+                            channel_rel_std = np.std(rel_std[finite_indices])
+                            rel_stds.append(channel_rel_std)
+
                     else:
-                        stds = [0, 0, 0]
+                        abs_stds = [0, 0, 0]
+                        rel_stds = [0, 0, 0]
+
+                if not absolute_scale:
+                    abs_means = [0, 0, 0]
+                if not relative_scale:
+                    rel_means = [0, 0, 0]
 
                 result = [round(ratio, 3),
-                          round(means[0], 3),
-                          round(means[1], 3),
-                          round(means[2], 3),
-                          round(stds[0], 3),
-                          round(stds[1], 3),
-                          round(stds[2], 3)]
+                          round(abs_means[0], 3),
+                          round(abs_means[1], 3),
+                          round(abs_means[2], 3),
+                          round(abs_stds[0], 3),
+                          round(abs_stds[1], 3),
+                          round(abs_stds[2], 3),
+                          round(rel_means[0], 3),
+                          round(rel_means[1], 3),
+                          round(rel_means[2], 3),
+                          round(rel_stds[0], 3),
+                          round(rel_stds[1], 3),
+                          round(rel_stds[2], 3)]
                 results.append(result)
-                print(f'{x.path.name}-{y.path.name}-{ratio}-{means}')
+                print(f'{x.path.name}-{y.path.name}-{ratio}-{abs_means}')
 
     data_array = np.array(results)
-    plt.errorbar(data_array[:, 0], data_array[:, 3], yerr=data_array[:, 6],
-                 c='r', marker='o', linestyle='none', markersize=3)
-    plt.errorbar(data_array[:, 0], data_array[:, 1], yerr=data_array[:, 4],
-                 c='b', marker='o', linestyle='none', markersize=3)
-    plt.errorbar(data_array[:, 0], data_array[:, 2], yerr=data_array[:, 5],
-                 c='g', marker='o', linestyle='none', markersize=3)
-    plt.savefig(save_path, dpi=300)
-    plt.clf()
+
+    if absolute_scale:
+        plt.errorbar(data_array[:, 0], data_array[:, 3], yerr=data_array[:, 6],
+                     c='r', marker='o', linestyle='none', markersize=3)
+        plt.errorbar(data_array[:, 0], data_array[:, 1], yerr=data_array[:, 4],
+                     c='b', marker='o', linestyle='none', markersize=3)
+        plt.errorbar(data_array[:, 0], data_array[:, 2], yerr=data_array[:, 5],
+                     c='g', marker='o', linestyle='none', markersize=3)
+        plt.savefig(absolute_fig_path, dpi=300)
+        plt.clf()
+    if relative_scale:
+        plt.errorbar(data_array[:, 0], data_array[:, 9], yerr=data_array[:, 12],
+                     c='r', marker='o', linestyle='none', markersize=3)
+        plt.errorbar(data_array[:, 0], data_array[:, 7], yerr=data_array[:, 10],
+                     c='b', marker='o', linestyle='none', markersize=3)
+        plt.errorbar(data_array[:, 0], data_array[:, 8], yerr=data_array[:, 11],
+                     c='g', marker='o', linestyle='none', markersize=3)
+        plt.savefig(relative_fig_path, dpi=300)
+        plt.clf()
 
     column_means = np.round(np.nanmean(data_array, axis=0), decimals=3)
     results.append(column_means.tolist())
@@ -174,10 +259,10 @@ def linearity_distribution(long_imageSet: Optional[ImageSet] = None,
             or a relative value.
     """
     if long_imageSet is None:
-        long_imageSet_path = gf.get_path_dialog('Choose long exposure image')
+        long_imageSet_path = gf.get_filepath_dialog('Choose long exposure image')
         long_imageSet = ImageSet(long_imageSet_path)
     if short_imageSet is None:
-        short_imageSet_path = gf.get_path_dialog('Choose short exposure image')
+        short_imageSet_path = gf.get_filepath_dialog('Choose short exposure image')
         short_imageSet = ImageSet(short_imageSet_path)
 
     if long_imageSet.exp > short_imageSet.exp:
