@@ -5,6 +5,7 @@ from typing import List
 from typing import Optional
 import general_functions as gf
 import matplotlib.pyplot as plt
+from scipy.odr import *
 from global_settings import *
 
 
@@ -32,14 +33,14 @@ def analyze_linearity(path: Path,
         absolute_scale: whether to report result on an absolute scale
         absolute_result: whether to calculate results as (div - ratio)/ratio
             or abs(div - ratio)/ratio.
+        ICRF: The ICRF used to linearize images subject to analysis. Used to
+            determine the which pixel values to ignore in linearity analysis.
 
     Returns:
     """
     # Save plotted figures to dir of images or a specified dir.
     if save_path is None:
         save_path = path.joinpath('scatter.png')
-    absolute_fig_path = save_path.parent.joinpath(save_path.name.replace(r'.png', r'_abs.png'))
-    relative_fig_path = save_path.parent.joinpath(save_path.name.replace(r'.png', r'_rel.png'))
 
     file_name = 'linearity_processed.txt'
     if sublists_of_imageSets is None:
@@ -200,27 +201,11 @@ def analyze_linearity(path: Path,
                 print(f'{x.path.name}-{y.path.name}-{ratio}-{abs_means}')
 
     data_array = np.array(results)
-
-    if absolute_scale:
-        plt.errorbar(data_array[:, 0], data_array[:, 3], yerr=data_array[:, 6],
-                     c='r', marker='o', linestyle='none', markersize=3)
-        plt.errorbar(data_array[:, 0], data_array[:, 1], yerr=data_array[:, 4],
-                     c='b', marker='o', linestyle='none', markersize=3)
-        plt.errorbar(data_array[:, 0], data_array[:, 2], yerr=data_array[:, 5],
-                     c='g', marker='o', linestyle='none', markersize=3)
-        plt.savefig(absolute_fig_path, dpi=300)
-        plt.clf()
-    if relative_scale:
-        plt.errorbar(data_array[:, 0], data_array[:, 9], yerr=data_array[:, 12],
-                     c='r', marker='o', linestyle='none', markersize=3)
-        plt.errorbar(data_array[:, 0], data_array[:, 7], yerr=data_array[:, 10],
-                     c='b', marker='o', linestyle='none', markersize=3)
-        plt.errorbar(data_array[:, 0], data_array[:, 8], yerr=data_array[:, 11],
-                     c='g', marker='o', linestyle='none', markersize=3)
-        plt.savefig(relative_fig_path, dpi=300)
-        plt.clf()
-
     column_means = np.round(np.nanmean(data_array, axis=0), decimals=3)
+    create_linearity_plots(data_array, save_path, True, column_means, True)
+    create_linearity_plots(data_array, save_path, False, column_means, True)
+    create_linearity_plots(data_array, save_path, True, column_means, False)
+    create_linearity_plots(data_array, save_path, False, column_means, False)
     results.append(column_means.tolist())
 
     if not pass_results:
@@ -230,6 +215,73 @@ def analyze_linearity(path: Path,
         return
 
     return results
+
+
+def create_linearity_plots(data_array: np.ndarray, save_path: Path,
+                           scale_switch: bool, means: np.ndarray,
+                           fit_line: bool):
+
+    if scale_switch:
+        if fit_line:
+            fig_path = save_path.parent.joinpath(save_path.name.replace(r'.png', r'_abs_fit.png'))
+        else:
+            fig_path = save_path.parent.joinpath(save_path.name.replace(r'.png', r'_abs.png'))
+        ylabel = 'Absolute disparity'
+    else:
+        if fit_line:
+            fig_path = save_path.parent.joinpath(save_path.name.replace(r'.png', r'_rel_fit.png'))
+        else:
+            fig_path = save_path.parent.joinpath(save_path.name.replace(r'.png', r'_rel.png'))
+        ylabel = 'Relative disparity'
+
+    x = data_array[:, 0]
+    fig, axes = plt.subplots(1, CHANNELS, figsize=(20, 5))
+
+    for c, ax in enumerate(axes):
+
+        if c == 0:
+            color = 'b'
+        elif c == 1:
+            color = 'g'
+        else:
+            color = 'r'
+
+        if scale_switch:
+            y = data_array[:, c+1]
+            y_err = data_array[:, c+4]
+            mean = means[c+1]
+            std = means[c+4]
+        else:
+            y = data_array[:, c+7]
+            y_err = data_array[:, c+10]
+            mean = means[c+7]
+            std = means[c+10]
+
+        if fit_line:
+            linear_model = Model(linear_function)
+            fit = RealData(x, y, sy=y_err)
+            odr = ODR(fit, linear_model, beta0=[0., 0.])
+            odr_output = odr.run()
+            line = linear_function(odr_output.beta, x)
+            plot_title = f'A={odr_output.beta[0]:.4f} $\\pm$ {odr_output.sd_beta[0]:.4f},' \
+                         f'B={odr_output.beta[1]:.4f} $\\pm$ {odr.output.sd_beta[1]:.4f}\n' \
+                         f'Mean={mean:.4f}, $\\sigma$={std:.4f}'
+        else:
+            plot_title = f'Mean={mean:.4f}, $\\sigma$={std:.4f}'
+
+        ax.errorbar(x, y, yerr=y_err, elinewidth=1,
+                    c=color, marker='x', linestyle='none', markersize=3)
+        if fit_line:
+            ax.plot(x, line, c='black')
+        ax.set_title(plot_title)
+
+    axes[0].set(ylabel=ylabel)
+    axes[1].set(xlabel='Exposure ratio')
+    plt.savefig(fig_path, dpi=300)
+    plt.clf()
+
+def linear_function(B, x):
+    return B[0] + B[1]*x
 
 
 def linearity_distribution(long_imageSet: Optional[ImageSet] = None,
@@ -356,9 +408,41 @@ def linearity_distribution(long_imageSet: Optional[ImageSet] = None,
     return
 
 
+def analyze_dark_frames(path: Path, threshold: float):
+
+    darkSets = gf.create_imageSets(path)
+    darkSets.sort(key=lambda darkSet: darkSet.exp)
+    results = []
+
+    for darkSet in darkSets:
+
+        darkSet.load_acq()
+        channel_results = [darkSet.exp]
+
+        for c in range(CHANNELS):
+
+            channel = darkSet.acq[:, :, c]
+            mean = np.mean(channel)
+            std = np.std(channel)
+            percentage_above_threshold = (channel > threshold).sum()/channel.size
+            channel_results.append(mean)
+            channel_results.append(std)
+            channel_results.append(percentage_above_threshold)
+
+        results.append(channel_results)
+        data_array = np.array(results)
+
+        save_path = path.joinpath('dark_frame_analysis.csv')
+        header = 'exp, bmean, bstd, brat, gmean, gstd, grat, rmean, rstd, rrat'
+        np.savetxt(save_path, data_array, delimiter=',', header=header)
+
+    return
+
+
 if __name__ == "__main__":
 
-    linearity_distribution(lower=5/255, upper=250/255, use_std=False,
-                           save_image=True, use_relative=True)
+    # linearity_distribution(lower=5/255, upper=250/255, use_std=False,
+    #                       save_image=True, use_relative=True)
+    analyze_dark_frames(DARK_PATH, 10/255)
 
     print('Run script from actual main file!')

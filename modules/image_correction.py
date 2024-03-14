@@ -17,8 +17,8 @@ def dark_correction(imageSet: ImageSet, darkSet_list: List[ImageSet]):
     :return: ImageSet with dark frame correction.
     """
     # Bias frame subtraction
-    bias = darkSet_list[0]
-    imageSet.acq = imageSet.acq - bias.acq
+    # bias = darkSet_list[0]
+    # imageSet.acq = imageSet.acq - bias.acq
 
     if imageSet.exp >= DARK_THRESHOLD:
         lesser_exp = False
@@ -147,7 +147,52 @@ def multiply_per_channel(flat_field_mean_list, image):
     return image
 
 
-def uncertainty(acqSet: ImageSet, darkList: List[ImageSet], flatList: List[ImageSet]):
+def uncertainty(acqSet: ImageSet, flatList: List[ImageSet]):
+    """
+    Calculates the uncertainty associated with an acquired image and the
+    applied corrections.
+    :param acqSet: ImageSet object to be corrected.
+    :param flatList: List containing the ImageSet objects of flat frames used in
+        fixed pattern correction.
+    :return: List containing the ImageSet objects of the main images of interest
+        with an .std attribute containing the uncertainty image.
+    """
+
+    try:
+        flatSet = next(flatSet for flatSet in flatList if
+                       acqSet.mag == flatSet.mag and acqSet.ill == flatSet.ill)
+
+        acq = acqSet.acq
+        ff = flatSet.acq
+        u_acq = acqSet.std
+        u_ff = flatSet.std
+        r, g, b = flat_field_mean(flatSet, 0)
+        ur, ug, ub = flat_field_mean(flatSet, 1)
+
+        u_acq_term = cv.divide(u_acq ** 2, ff ** 4)
+        u_acq_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+                                          u_acq_term)
+
+        u_ff_term = cv.divide((acq) ** 2, ff ** 4)
+        u_ff_term = cv.multiply(u_ff_term, u_ff ** 2)
+        u_ff_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+                                         u_ff_term)
+
+        u_ffm_term = cv.divide((acq) ** 2, ff ** 2)
+        u_ffm_term = multiply_per_channel([ur ** 2, ug ** 2, ub ** 2],
+                                          u_ffm_term)
+
+        acqSet.std = np.clip(u_acq_term + u_ff_term + u_ffm_term,
+                             0, 1)
+
+    except StopIteration:
+
+        return acqSet
+
+    return acqSet
+
+
+def uncertainty_full(acqSet: ImageSet, darkList: List[ImageSet], flatList: List[ImageSet]):
     """
     Calculates the uncertainty associated with an acquired image and the
     applied corrections.
@@ -258,15 +303,18 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
     :return: None or acq_list
     """
     # Initialize image lists and name lists
+    acq_list_preloaded = False
     if acq_list is None:
         acq_list = gf.create_imageSets(ACQ_PATH)
+    else:
+        acq_list_preloaded = True
 
     if dark_list is None:
         dark_list = gf.create_imageSets(DARK_PATH)
     dark_list.sort(key=lambda darkSet: darkSet.exp)
     for darkSet in dark_list:
         darkSet.load_acq()
-        darkSet.load_std()
+        # darkSet.load_std() # Not used in current version
 
     if flat_list is None:
         flat_list = gf.create_imageSets(FLAT_PATH)
@@ -275,8 +323,9 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
         flatSet.load_std()
 
     for acqSet in acq_list:
-        acqSet.load_acq()
-        acqSet.load_std()
+        if not acq_list_preloaded:
+            acqSet.load_acq()
+            acqSet.load_std()
 
         # Uncertainty
         acqSet = uncertainty(acqSet, dark_list, flat_list)
@@ -294,8 +343,7 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
             acqSet.std = None
 
     # Pass corrected images if no need to save on disk.
-    if save_to_file is False:
-
+    if not save_to_file:
         return acq_list
 
     return

@@ -19,7 +19,7 @@ from global_settings import *
 energy_array = np.zeros((NUMBER_OF_HEIGHTS, CHANNELS * 2), dtype=float)
 
 
-def calibrate_ICRF():
+def calibrate_ICRF(initial_function: Optional[np.ndarray] = None):
     """
     Run the ICRF calibration algorithm for all the given evaluation heights in
     the config.ini file. Initial and final energies, the optimized ICRFs and
@@ -30,7 +30,7 @@ def calibrate_ICRF():
     x_range = np.linspace(0, 1, BITS)
     for index, height in enumerate(EVALUATION_HEIGHTS):
         ICRF_array, initial_energy_array, final_energy_array = \
-            ICRF.calibration(IN_PCA_GUESS, height, LOWER_PCA_LIM, UPPER_PCA_LIM)
+            ICRF.calibration(height, LOWER_PCA_LIM, UPPER_PCA_LIM, initial_function)
 
         energy_array[index, :CHANNELS] = initial_energy_array
         energy_array[index, CHANNELS:] = final_energy_array
@@ -51,11 +51,17 @@ def calibrate_ICRF():
     return
 
 
-def calibrate_ICRF_e(initial_function: Optional[np.ndarray] = None):
+def calibrate_ICRF_e(initial_function: Optional[np.ndarray] = None,
+                     data_spacing: Optional[int] = 150,
+                     data_limits: Optional[int] = 2):
+
+    lower_limit = data_limits
+    upper_limit = MAX_DN - data_limits
 
     x_range = np.linspace(0, 1, BITS)
     ICRF_array, initial_energy_array, final_energy_array = \
-        ICRF_e.calibration(LOWER_PCA_LIM, UPPER_PCA_LIM, initial_function)
+        ICRF_e.calibration(LOWER_PCA_LIM, UPPER_PCA_LIM, initial_function,
+                           data_spacing, lower_limit, upper_limit)
 
     np.savetxt(OUTPUT_DIRECTORY.joinpath(f'ICRF_exp.txt'), ICRF_array)
 
@@ -153,20 +159,22 @@ def main():
                   r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal',
                   r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD-LBGR\mean']
     analysis_path = Path(r'E:\Kouluhommat\MSc SPV\Mittaukset jne\Analysis\Modal data collector\File cache\Bias correction on\srgb mean')
-    init_func = np.linspace(0, 1, BITS) ** 5
+    init_func = np.linspace(0, 1, BITS) ** 3
     ICRF = rd.read_data_from_txt(ICRF_CALIBRATED_FILE)
+    data_limits = 5
+    data_spacing = 2
 
     # mdc.collect_mean_data()
     # process_base_data(data_paths[0], include_gamma=True, color_split=True)
-    # calibrate_ICRF()
-    # calibrate_ICRF_e()
+    # calibrate_ICRF(init_func)
+    calibrate_ICRF_e(init_func, data_spacing, data_limits)
     # process_mdl()
     # image_correction.image_correction(save_to_file=True)
-    process_HDR()
+    # process_HDR()
     # image_calculation.calibrate_dark_frames()
     # image_calculation.calibrate_flats()
     # ia.analyze_linearity(OUT_PATH, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True, ICRF=ICRF)
-    # ia.analyze_linearity(ACQ_PATH, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True)
+    # ia.analyze_linearity(ACQ_PATH, use_std=True, absolute_result=True, absolute_scale=True, relative_scale=True)
     # ia.analyze_linearity(analysis_path, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True)
     # large_linearity_analysis(data_paths)
     # general_functions.show_image()

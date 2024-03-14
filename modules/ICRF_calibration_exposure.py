@@ -7,8 +7,11 @@ from typing import List
 from ImageSet import ImageSet
 from global_settings import *
 
+use_mean_ICRF = False
 ICRF = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
 linear_scale = np.linspace(0, 1, DATAPOINTS, dtype=float)
+global_lower_data_limit = 0
+global_upper_data_limit = 255
 
 
 def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
@@ -27,8 +30,13 @@ def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
     Return:
         The new iteration of the inverse camera response function.
     """
-    mean_ICRF = np.linspace(0, 1, BITS) ** PCA_params[0]
-    product = np.matmul(PCA_array, PCA_params[1:])
+    global use_mean_ICRF
+    if not use_mean_ICRF:
+        mean_ICRF = np.linspace(0, 1, BITS) ** PCA_params[0]
+        product = np.matmul(PCA_array, PCA_params[1:])
+    else:
+        product = np.matmul(PCA_array, PCA_params)
+
     iterated_ICRF = mean_ICRF + product
 
     return iterated_ICRF
@@ -43,9 +51,11 @@ def analyze_linearity(sublists_of_imageSets: List[List[ImageSet]],
         use_relative: whether to utilize relative or absolute pixel values.
     Returns:
     """
+    global global_upper_data_limit
+    global global_lower_data_limit
     results = []
-    lower = 5/MAX_DN
-    upper = 250/MAX_DN
+    lower = global_lower_data_limit/MAX_DN
+    upper = global_upper_data_limit/MAX_DN
 
     '''
     range_step = (upper - lower) / 3
@@ -189,19 +199,23 @@ def interpolate_ICRF(ICRF_array):
     return interpolated_ICRF
 
 
-def calibration(lower_limit, upper_limit,
-                initial_function: Optional[np.ndarray] = None):
+def calibration(lower_PCA_limit, upper_PCA_limit,
+                initial_function: Optional[np.ndarray] = None,
+                data_spacing: Optional[int] = 150,
+                lower_data_limit: Optional[int] = 2,
+                upper_data_limit: Optional[int] = 253):
     """ The main function running the ICRF calibration process that is called
     from outside the module.
 
        Args:
            initial_function: base function from which iteration starts.
-           initial_guess: initial guess for the values of the PCA coefficients
-                subject to optimization.
-           evaluation_heights: the number of heights at which the datapoint
                distances to the edges of the distribution have been calculated.
-           lower_limit: a lower limit for the PCA coefficient values.
-           upper_limit: an upper limit for the PCA coefficient values.
+           lower_PCA_limit: a lower limit for the PCA coefficient values.
+           upper_PCA_limit: an upper limit for the PCA coefficient values.
+           data_spacing: used to determine the amount of pixels used in linearity
+                analysis.
+           lower_data_limit: pixel values under this are ignored in linearity
+           upper_data_limit: pixel values above this are ignored in linearity
 
        Return:
             ICRF_array: a Numpy float array containing the optimized ICRFs of
@@ -212,19 +226,36 @@ def calibration(lower_limit, upper_limit,
                 energies of each channel.
        """
     global ICRF
+    global use_mean_ICRF
+    global global_upper_data_limit
+    global global_lower_data_limit
+    global_upper_data_limit = upper_data_limit
+    global_lower_data_limit = lower_data_limit
     final_energy_array = np.zeros(CHANNELS, dtype=float)
     initial_energy_array = np.zeros(CHANNELS, dtype=float)
 
-    limits = [[0.1, 6],[lower_limit, upper_limit], [lower_limit, upper_limit],
-              [lower_limit, upper_limit], [lower_limit, upper_limit],
-              [lower_limit, upper_limit]]
+    if initial_function is None:
+        use_mean_ICRF = True
+        limits = [[lower_PCA_limit, upper_PCA_limit],
+                  [lower_PCA_limit, upper_PCA_limit],
+                  [lower_PCA_limit, upper_PCA_limit],
+                  [lower_PCA_limit, upper_PCA_limit],
+                  [lower_PCA_limit, upper_PCA_limit]]
+    else:
+        use_mean_ICRF = False
+        limits = [[0.1, 6],
+                  [lower_PCA_limit, upper_PCA_limit],
+                  [lower_PCA_limit, upper_PCA_limit],
+                  [lower_PCA_limit, upper_PCA_limit],
+                  [lower_PCA_limit, upper_PCA_limit],
+                  [lower_PCA_limit, upper_PCA_limit]]
 
     # Initialize image lists and name lists
 
     acq_list = gf.create_imageSets(ACQ_PATH)
     for imageSet in acq_list:
         imageSet.load_acq()
-        imageSet.acq = gf.choose_evenly_spaced_points(imageSet.acq, 150)
+        imageSet.acq = gf.choose_evenly_spaced_points(imageSet.acq, data_spacing)
     acq_sublists = gf.separate_to_sublists(acq_list)
     for sublist in acq_sublists:
         sublist.sort(key=lambda imageSet: imageSet.exp)
@@ -239,7 +270,7 @@ def calibration(lower_limit, upper_limit,
         # numpy arrays.
         PCA_array = rd.read_data_from_txt(PCA_file_name)
 
-        if initial_function is None:
+        if use_mean_ICRF:
             mean_ICRF_array = rd.read_data_from_txt(mean_ICRF_file_name)
         else:
             mean_ICRF_array = initial_function
@@ -269,13 +300,20 @@ def calibration(lower_limit, upper_limit,
         '''
         limit = 0.1
 
+        if use_mean_ICRF:
+            x0 = [0, 0, 0, 0, 0]
+        else:
+            x0 = [1, 0, 0, 0, 0, 0]
+
+        number_of_iterations = 0
         # Access DifferentialEvolutionSolver directly to stop iteration if
         # solution has converged or energy function value is under given limit.
         with DifferentialEvolutionSolver(_energy_function, limits, args=(
             mean_ICRF_array, PCA_array, acq_sublists, i),
-                                         strategy='best1bin', tol=0.01,
-                                         x0=[1, 0, 0, 0, 0, 0]) as solver:
+                                         strategy='best1bin', tol=0.005,
+                                         x0=x0) as solver:
             for step in solver:
+                number_of_iterations += 1
                 step = next(solver)  # Returns a tuple of xk and func evaluation
                 func_value = step[1]  # Retrieves the func evaluation
                 print(func_value)
@@ -286,7 +324,7 @@ def calibration(lower_limit, upper_limit,
         ICRF[:, i] = _inverse_camera_response_function(mean_ICRF_array, PCA_array, result)
 
         del solver
-        print(f'Result: f{result}')
+        print(f'Result: f{result}, number of iterations: {number_of_iterations}')
         '''
         result = minimize(_energy_function, IN_PCA_GUESS, method='nelder-mead',
                           args=(mean_ICRF_array, PCA_array, acq_sublists, i),

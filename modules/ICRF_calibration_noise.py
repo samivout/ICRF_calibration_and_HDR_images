@@ -2,11 +2,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 from scipy.optimize import differential_evolution
+from scipy.optimize._differentialevolution import DifferentialEvolutionSolver
 from typing import Optional
 from global_settings import *
 
-ICRF = np.zeros((DATAPOINTS, 1), dtype=float)
+ICRF = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
 linear_scale = np.linspace(0, 1, DATAPOINTS, dtype=float)
+use_mean_ICRF = False
 
 
 def _process_datapoint_distances(mean_data, number_of_heights):
@@ -180,14 +182,20 @@ def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
     Return:
         The new iteration of the inverse camera response function.
     """
-    product = np.matmul(PCA_array, PCA_params)
+    global use_mean_ICRF
+    if not use_mean_ICRF:
+        mean_ICRF = np.linspace(0, 1, BITS) ** PCA_params[0]
+        product = np.matmul(PCA_array, PCA_params[1:])
+    else:
+        product = np.matmul(PCA_array, PCA_params)
+
     iterated_ICRF = mean_ICRF + product
 
     return iterated_ICRF
 
 
 def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
-                     edge_distances):
+                     edge_distances, channel):
     """ The energy function, whose value is subject to minimization. Iterates
     ICRF on a global scale.
 
@@ -208,18 +216,19 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
     energy = 0
     global ICRF
 
-    ICRF = _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params)
-    ICRF[:] += 1 - ICRF[-1]
-    ICRF[0] = 0
+    ICRF[:, channel] = _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params)
+    ICRF[:, channel] += 1 - ICRF[-1, channel]
+    ICRF[0, channel] = 0
+
     lower_ignore = 2
     upper_ignore = 2
 
-    if np.max(ICRF) > 1 or np.min(ICRF) < 0:
+    if np.max(ICRF[:, channel]) > 1 or np.min(ICRF[:, channel]) < 0:
         energy = np.inf
         return energy
 
     for i in range(MIN_DN + lower_ignore, BITS - upper_ignore):
-        energy += _skewness_evaluation(edge_distances[i, :, :], ICRF)
+        energy += _skewness_evaluation(edge_distances[i, :, :], ICRF[:, channel])
 
     energy /= (BITS - upper_ignore - lower_ignore - MIN_DN)
 
@@ -250,15 +259,13 @@ def interpolate_ICRF(ICRF_array: np.ndarray):
     return interpolated_ICRF
 
 
-def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
+def calibration(evaluation_heights, lower_limit, upper_limit,
                 initial_function: Optional[np.ndarray] = None):
     """ The main function running the ICRF calibration process that is called
     from outside the module.
 
        Args:
            initial_function: base function from which iteration starts.
-           initial_guess: initial guess for the values of the PCA coefficients
-                subject to optimization.
            evaluation_heights: the number of heights at which the datapoint
                distances to the edges of the distribution have been calculated.
            lower_limit: a lower limit for the PCA coefficient values.
@@ -272,13 +279,28 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
             final_energy_array: a Numpy float array containing the final
                 energies of each channel.
        """
-    ICRF_array = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
+    global ICRF
+    global use_mean_ICRF
     final_energy_array = np.zeros(CHANNELS, dtype=float)
     initial_energy_array = np.zeros(CHANNELS, dtype=float)
 
-    limits = [[lower_limit, upper_limit], [lower_limit, upper_limit],
-              [lower_limit, upper_limit], [lower_limit, upper_limit],
-              [lower_limit, upper_limit]]
+    if initial_function is None:
+        use_mean_ICRF = True
+        limits = [[lower_limit, upper_limit],
+                  [lower_limit, upper_limit],
+                  [lower_limit, upper_limit],
+                  [lower_limit, upper_limit],
+                  [lower_limit, upper_limit]]
+        x0 = [0, 0, 0, 0, 0]
+    else:
+        use_mean_ICRF = False
+        limits = [[0.1, 6],
+                  [lower_limit, upper_limit],
+                  [lower_limit, upper_limit],
+                  [lower_limit, upper_limit],
+                  [lower_limit, upper_limit],
+                  [lower_limit, upper_limit]]
+        x0 = [3, 0, 0, 0, 0, 0]
 
     for i in range(len(MEAN_DATA_FILES)):
         # Get the filenames from the attribute arrays.
@@ -290,7 +312,8 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
         # numpy arrays.
         mean_data_array = rd.read_data_from_txt(mean_file_name)
         PCA_array = rd.read_data_from_txt(PCA_file_name)
-        if initial_function is None:
+
+        if use_mean_ICRF:
             mean_ICRF_array = rd.read_data_from_txt(mean_ICRF_file_name)
         else:
             mean_ICRF_array = initial_function
@@ -298,12 +321,32 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
         edge_distances = _process_datapoint_distances(mean_data_array,
                                                       evaluation_heights)
 
-        initialEnergy = _energy_function(initial_guess, mean_ICRF_array,
+        initialEnergy = _energy_function(x0, mean_ICRF_array,
                                          PCA_array, evaluation_heights,
-                                         edge_distances)
+                                         edge_distances, i)
         initial_energy_array[i] = initialEnergy
         print(initialEnergy)
 
+        # Access DifferentialEvolutionSolver directly to stop iteration if
+        # solution has converged or energy function value is under given limit.
+        with DifferentialEvolutionSolver(_energy_function, limits, args=(
+                mean_ICRF_array, PCA_array, evaluation_heights, edge_distances, i),
+                                         strategy='best1bin', tol=0.01,
+                                         x0=x0) as solver:
+            for step in solver:
+                step = next(solver)  # Returns a tuple of xk and func evaluation
+                func_value = step[1]  # Retrieves the func evaluation
+                print(func_value)
+                if solver.converged():
+                    break
+
+        result = solver.x
+        ICRF[:, i] = _inverse_camera_response_function(mean_ICRF_array,
+                                                       PCA_array, result)
+        del solver
+        print(f'Result: f{result}')
+        final_energy_array[i] = func_value
+        '''
         result = differential_evolution(_energy_function, limits, args=(
             mean_ICRF_array, PCA_array, evaluation_heights, edge_distances),
                                         strategy='best1bin', disp=False,
@@ -316,8 +359,10 @@ def calibration(initial_guess, evaluation_heights, lower_limit, upper_limit,
                                       evaluation_heights, edge_distances)
         final_energy_array[i] = evaluation
         print('Solution: f(%s) = %.5f' % (solution, evaluation))
-        
-        ICRF_array[:, i] = ICRF
+        ICRF[:, i] = _inverse_camera_response_function(mean_ICRF_array,
+                                                       PCA_array, solution)
+        '''
+    ICRF_array = ICRF
 
     ICRF_array[:, 0] += 1 - ICRF_array[-1, 0]
     ICRF_array[:, 1] += 1 - ICRF_array[-1, 1]

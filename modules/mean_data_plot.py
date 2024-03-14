@@ -235,5 +235,5 @@ if __name__ == "__main__":
 
     mean_data_plot()
     plot_PCA()
-    plot_dorf_PCA()
-    plot_ICRF_PCA()
+    # plot_dorf_PCA()
+    # plot_ICRF_PCA()

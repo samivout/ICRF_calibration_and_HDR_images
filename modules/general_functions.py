@@ -301,20 +301,23 @@ def subtract_imageSets(im0: ImageSet, im1: ImageSet | float,
     return subtractionSet
 
 
-def choose_evenly_spaced_points(array: np.ndarray, num_points: int):
+def choose_evenly_spaced_points(array: np.ndarray, step_x: int,
+                                step_y: Optional[int] = None):
     """
     Select points evenly in a Numpy array.
     Args:
         array: Input array
-        num_points: 'number' of points to choose
+        step_x: step size for columns
+        step_y: step size for rows
 
     Returns: Sampled array
     """
     # Calculate the step size between points
-    step = max(1, int(array.shape[0] / (num_points - 1)))
+    if step_y is None:
+        step_y = step_x
 
     # Select the evenly spaced points
-    points = array[::step, ::step]
+    points = array[::step_x, ::step_y]
 
     return points
 
@@ -472,4 +475,18 @@ def get_filepath_dialog(title: str):
         return Path(file)
 
     return
+
+
+if __name__ == "__main__":
+
+    test_array = np.zeros((IM_SIZE_X, IM_SIZE_Y), dtype=int)
+    test_array_size = test_array.size
+    sampled_array = choose_evenly_spaced_points(test_array, 100)
+    sampled_array_size = sampled_array.size
+    ratio = sampled_array_size/test_array_size
+    print(f'Test array size: {test_array_size}')
+    print(f'Sampled array size: {sampled_array_size}')
+    print(f'Ratio: {ratio}')
+    print(f'Sampled array shape: {np.shape(sampled_array)}')
+
 

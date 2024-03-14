@@ -20,42 +20,42 @@ def create_HDR_absolute(list_of_ImageSets: List[ImageSet]):
 
     hat_weight_vectorized = np.vectorize(hat_weight)
 
-    number_of_imageSets = len(list_of_ImageSets)
-    numerator = np.zeros(np.shape(list_of_ImageSets[0].acq), dtype=float)
-    denominator = np.zeros(np.shape(list_of_ImageSets[0].acq), dtype=float)
-
-    for i in range(number_of_imageSets):
-
-        imageSet = list_of_ImageSets[i]
-        weight_array = hat_weight_vectorized(imageSet.acq)
-        numerator += weight_array * imageSet.acq * (1/imageSet.exp)
-        denominator += weight_array
-
-    HDR_acq = np.divide(numerator, denominator,
-                        out=np.zeros_like(numerator),
-                        where=denominator != 0)
-
-    HDR_std = None
-
     number_of_STD_images = 0
     for imageSet in list_of_ImageSets:
         if imageSet.std is not None:
             number_of_STD_images += 1
 
+    number_of_imageSets = len(list_of_ImageSets)
+
+    numerator = np.zeros(np.shape(list_of_ImageSets[0].acq), dtype=float)
+    denominator = np.zeros(np.shape(list_of_ImageSets[0].acq), dtype=float)
+
     if number_of_STD_images == number_of_imageSets:
+        std_numerator = np.zeros(np.shape(list_of_ImageSets[0].acq), dtype=float)
 
-        numerator = np.zeros(np.shape(list_of_ImageSets[0].acq), dtype=float)
-        denominator = np.zeros(np.shape(list_of_ImageSets[0].acq), dtype=float)
+    for i in range(number_of_imageSets):
 
-        for i in range(number_of_imageSets):
-            imageSet = list_of_ImageSets[i]
-            weight_array = hat_weight_vectorized(imageSet.acq)
-            numerator += weight_array**2 * (imageSet.std**2) * (1 / imageSet.exp)
-            denominator += weight_array
+        baseSet = list_of_ImageSets[i]
+        baseSet.load_acq()
 
-        HDR_std = np.sqrt(np.divide(numerator, denominator**2,
-                                    out=np.zeros_like(numerator),
-                                    where=denominator != 0))
+        imageSet = list_of_ImageSets[i]
+        weight_array = hat_weight_vectorized(baseSet.acq)
+
+        del baseSet
+
+        numerator += weight_array * imageSet.acq * (1/imageSet.exp)
+        denominator += weight_array
+
+        if number_of_STD_images == number_of_imageSets:
+            std_numerator += weight_array ** 2 * (imageSet.std ** 2) * (1 / imageSet.exp)
+
+    HDR_acq = np.divide(numerator, denominator,
+                        out=np.zeros_like(numerator),
+                        where=denominator == 0)
+
+    HDR_std = np.sqrt(np.divide(numerator, denominator**2,
+                                out=np.zeros_like(numerator),
+                                where=denominator == 0))
 
     imageSet_HDR = copy.deepcopy(list_of_ImageSets[0])
     imageSet_HDR.acq = HDR_acq
@@ -73,7 +73,7 @@ def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
                        fix_artifacts: Optional[bool] = True,
                        ICRF: Optional[np.ndarray] = None,
                        STD_data: Optional[np.ndarray] = None,
-                       gaussian_blur: Optional[bool] = True):
+                       gaussian_blur: Optional[bool] = False):
 
     if ICRF is None:
         ICRF = rd.read_data_from_txt(ICRF_CALIBRATED_FILE)
@@ -91,6 +91,24 @@ def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
     acq_sublists = gf.separate_to_sublists(acq_list)
     del acq_list
 
+    for sublist in acq_sublists:
+
+        for imageSet in sublist:
+
+            imageSet.load_acq()
+            imageSet.load_std()
+
+            imageSet = gf.linearize_ImageSet(imageSet, ICRF, ICRF_diff, gaussian_blur)
+            if save_linear:
+                if save_8bit:
+                    imageSet.save_8bit(OUT_PATH.joinpath(imageSet.path.name))
+                if save_32bit:
+                    imageSet.save_32bit(OUT_PATH.joinpath(imageSet.path.name))
+                print(f"Saved {imageSet.path.name}")
+
+    if pass_linear:
+        return acq_sublists
+
     if fix_artifacts:
         flat_list = gf.create_imageSets(FLAT_PATH)
         for flatSet in flat_list:
@@ -102,31 +120,11 @@ def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
             darkSet.load_acq()
             darkSet.load_std()
 
-    for sublist in acq_sublists:
-
-        if fix_artifacts:
+        for sublist in acq_sublists:
             sublist = ic.image_correction(sublist, dark_list, flat_list)
 
-        for imageSet in sublist:
-
-            if not fix_artifacts:
-                imageSet.load_acq()
-                imageSet.load_std()
-
-            imageSet = gf.linearize_ImageSet(imageSet, ICRF, ICRF_diff, gaussian_blur)
-            if save_linear:
-                if save_8bit:
-                    imageSet.save_8bit(OUT_PATH.joinpath(imageSet.path.name))
-                if save_32bit:
-                    imageSet.save_32bit(OUT_PATH.joinpath(imageSet.path.name))
-                print(f"Saved {imageSet.path.name}")
-
-    if fix_artifacts:
         del flat_list
         del dark_list
-
-    if pass_linear:
-        return acq_sublists
 
     for sublist in acq_sublists:
 
