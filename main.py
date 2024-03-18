@@ -162,18 +162,18 @@ def main():
     init_func = np.linspace(0, 1, BITS) ** 3
     ICRF = rd.read_data_from_txt(ICRF_CALIBRATED_FILE)
     data_limits = 5
-    data_spacing = 2
+    data_spacing = 100
 
     # mdc.collect_mean_data()
     # process_base_data(data_paths[0], include_gamma=True, color_split=True)
     # calibrate_ICRF(init_func)
-    calibrate_ICRF_e(init_func, data_spacing, data_limits)
+    # calibrate_ICRF_e(init_func, data_spacing, data_limits)
     # process_mdl()
     # image_correction.image_correction(save_to_file=True)
     # process_HDR()
     # image_calculation.calibrate_dark_frames()
     # image_calculation.calibrate_flats()
-    # ia.analyze_linearity(OUT_PATH, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True, ICRF=ICRF)
+    ia.analyze_linearity(OUT_PATH, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True, ICRF=ICRF)
     # ia.analyze_linearity(ACQ_PATH, use_std=True, absolute_result=True, absolute_scale=True, relative_scale=True)
     # ia.analyze_linearity(analysis_path, use_std=True, absolute_result=False, absolute_scale=True, relative_scale=True)
     # large_linearity_analysis(data_paths)

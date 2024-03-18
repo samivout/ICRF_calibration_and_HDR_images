@@ -1,10 +1,10 @@
 import numpy as np
 from scipy.optimize._differentialevolution import DifferentialEvolutionSolver
-from scipy.optimize import minimize
 import general_functions as gf
 from typing import Optional
 from typing import List
 from ImageSet import ImageSet
+from joblib import delayed, parallel
 from global_settings import *
 
 use_mean_ICRF = False
@@ -241,6 +241,7 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
                   [lower_PCA_limit, upper_PCA_limit],
                   [lower_PCA_limit, upper_PCA_limit],
                   [lower_PCA_limit, upper_PCA_limit]]
+        x0 = [0, 0, 0, 0, 0]
     else:
         use_mean_ICRF = False
         limits = [[0.1, 6],
@@ -249,6 +250,9 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
                   [lower_PCA_limit, upper_PCA_limit],
                   [lower_PCA_limit, upper_PCA_limit],
                   [lower_PCA_limit, upper_PCA_limit]]
+        x0 = [1, 0, 0, 0, 0, 0]
+
+    limit = 0.1
 
     # Initialize image lists and name lists
 
@@ -261,76 +265,44 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
         sublist.sort(key=lambda imageSet: imageSet.exp)
     del acq_list
 
-    for i in range(len(MEAN_DATA_FILES)):
-        # Get the filenames from the attribute arrays.
-        PCA_file_name = PCA_FILES[i]
-        mean_ICRF_file_name = MEAN_ICRF_FILES[i]
+    def solve_channel(PCA_file_name: str, mean_ICRF_file_name: str,
+                      channel: int):
 
-        # Load mean data, principal component data and mean ICRF data into
-        # numpy arrays.
+        global ICRF
+
         PCA_array = rd.read_data_from_txt(PCA_file_name)
-
         if use_mean_ICRF:
             mean_ICRF_array = rd.read_data_from_txt(mean_ICRF_file_name)
         else:
             mean_ICRF_array = initial_function
-        '''
-        initial_mean = _energy_function(IN_PCA_GUESS, mean_ICRF_array, PCA_array, acq_sublists, i)
-        initial1 = _initial_energy_function(1, acq_sublists, i)
-        initial2 = _initial_energy_function(1.5, acq_sublists, i)
-        initial3 = _initial_energy_function(1.75, acq_sublists, i)
-        print(initial_mean, initial1, initial2, initial3)
-        '''
-
-        '''
-        
-        with DifferentialEvolutionSolver(_initial_energy_function, [[0.5, 4]], args=(acq_sublists, i),
-                                         strategy='rand1bin', tol=0.0001,
-                                         x0=[1]) as solver:
-            for step in solver:
-                step = next(solver)  # Returns a tuple of xk and func evaluation
-                func_value = step[1]  # Retrieves the func evaluation
-                if solver.converged():
-                    break
-
-        exponent = solver.x[0]
-        del solver
-        print(exponent)
-        mean_ICRF_array = np.linspace(0, 1, BITS) ** exponent
-        '''
-        limit = 0.1
-
-        if use_mean_ICRF:
-            x0 = [0, 0, 0, 0, 0]
-        else:
-            x0 = [1, 0, 0, 0, 0, 0]
 
         number_of_iterations = 0
         # Access DifferentialEvolutionSolver directly to stop iteration if
         # solution has converged or energy function value is under given limit.
         with DifferentialEvolutionSolver(_energy_function, limits, args=(
-            mean_ICRF_array, PCA_array, acq_sublists, i),
+                mean_ICRF_array, PCA_array, acq_sublists, channel),
                                          strategy='best1bin', tol=0.005,
                                          x0=x0) as solver:
             for step in solver:
                 number_of_iterations += 1
                 step = next(solver)  # Returns a tuple of xk and func evaluation
                 func_value = step[1]  # Retrieves the func evaluation
-                print(func_value)
+                if number_of_iterations % 5 == 0:
+                    print(
+                        f'Channel {channel} value: {func_value} on step {number_of_iterations}')
                 if solver.converged() or func_value < limit:
                     break
 
         result = solver.x
-        ICRF[:, i] = _inverse_camera_response_function(mean_ICRF_array, PCA_array, result)
+        ICRF[:, channel] = _inverse_camera_response_function(mean_ICRF_array,
+                                                             PCA_array, result)
 
         del solver
-        print(f'Result: f{result}, number of iterations: {number_of_iterations}')
-        '''
-        result = minimize(_energy_function, IN_PCA_GUESS, method='nelder-mead',
-                          args=(mean_ICRF_array, PCA_array, acq_sublists, i),
-                          bounds=limits, options={'maxiter': 10000})
-        print(result)
-        '''
+        print(f'Channel {channel} result: f{result}, number of iterations: {number_of_iterations}')
+
+    parallel.Parallel(n_jobs=CHANNELS, prefer="threads")\
+        (delayed(solve_channel)(PCA_FILES[c], MEAN_ICRF_FILES[c], c) for c in range(CHANNELS))
+
     ICRF_array = ICRF
 
     # The ICRF might be shifted on the y-axis, so we adjust it back to [0,1]

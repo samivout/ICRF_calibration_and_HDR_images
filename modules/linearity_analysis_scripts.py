@@ -38,8 +38,10 @@ def calibrate_ICRF_noise(height: int, initial_function: Optional[np.ndarray] = N
 
 def calibrate_ICRF_exposure(initial_function: Optional[np.ndarray] = None,
                             data_spacing: Optional[int] = 150,
-                            lower_data_limit: Optional[int] = 2,
-                            upper_data_limit: Optional[int] = 253):
+                            data_limit: Optional[int] = 2):
+
+    lower_data_limit = MIN_DN + data_limit
+    upper_data_limit = MAX_DN - data_limit
 
     ICRF_array, initial_energy_array, final_energy_array = \
         ICRF_e.calibration(LOWER_PCA_LIM, UPPER_PCA_LIM, initial_function,
@@ -75,7 +77,8 @@ def save_and_plot_ICRF(ICRF_array: np.ndarray, name: str, path: Path):
 def linearity_analysis_exposure(data_paths: Optional[List[Path]] = [data_directory],
                                 include_gamma: Optional[bool] = False,
                                 limits: Optional[List[int]] = None,
-                                data_spacing: Optional[List[int]] = None):
+                                data_spacing: Optional[List[int]] = None,
+                                run_number: Optional[int] = 1):
     """
     Function that runs a large scale linearity analysis.
     Args:
@@ -84,28 +87,34 @@ def linearity_analysis_exposure(data_paths: Optional[List[Path]] = [data_directo
         limits: list of pixel value limits used to set rejection range
         data_spacing: determines amount of pixels sampled in exposure-based
             ICRF calibration.
+        run_number: identifies the particular run and is used to save data
     """
-    def linearity_cycle(path: Path, init_func: Optional[np.ndarray] = None):
+    def linearity_cycle(path: Path, init_func: Optional[np.ndarray] = None,
+                        data_limit: Optional[int] = 2,
+                        data_spacing: Optional[int] = 100):
         """
         Inner funciton to run a single cycle of linearity analysis.
         Args:
             path: the path from which the camera data distribution is sourced
                 from.
             init_func: The initial function passed to ICRF calibration
+            data_limit: Limit for rejecting pixel values in linearity analysis
+            data_spacing: Sampling spacing used for the images in exposure
+                based calibration.
         """
+        save_path = path.joinpath(f'exp_measurement_{run_number}')
+        save_path.mkdir(exist_ok=True)
+
         start_time = timeit.default_timer()
-        lower = MIN_DN + limit
-        upper = MAX_DN - limit
         ICRF_array = calibrate_ICRF_exposure(initial_function=init_func,
                                              data_spacing=data_spacing,
-                                             lower_data_limit=lower,
-                                             upper_data_limit=upper)
+                                             data_limit=data_limit)
         if init_func is None:
-            save_and_plot_ICRF(ICRF_array, f"ICRFe_mean_l{limit}_s{spacing}", path)
-            scatter_path = path.joinpath(f"SctrE_mean_l{limit}_s{spacing}.png")
+            save_and_plot_ICRF(ICRF_array, f"ICRFe_mean_l{limit}_s{spacing}", save_path)
+            scatter_path = save_path.joinpath(f"SctrE_mean_l{limit}_s{spacing}.png")
         else:
-            save_and_plot_ICRF(ICRF_array, f"ICRFe_l{limit}_s{spacing}", path)
-            scatter_path = path.joinpath(f"SctrE_l{limit}_s{spacing}.png")
+            save_and_plot_ICRF(ICRF_array, f"ICRFe_l{limit}_s{spacing}", save_path)
+            scatter_path = save_path.joinpath(f"SctrE_l{limit}_s{spacing}.png")
 
         duration = timeit.default_timer() - start_time
 
@@ -160,15 +169,15 @@ def linearity_analysis_exposure(data_paths: Optional[List[Path]] = [data_directo
             for spacing in data_spacing:
 
                 initial_function = None
-                linearity_cycle(data_path, initial_function)
+                linearity_cycle(data_path, initial_function, limit, spacing)
 
         for limit in limits:
             for spacing in data_spacing:
 
                 initial_function = linear_scale
-                linearity_cycle(data_path, initial_function)
+                linearity_cycle(data_path, initial_function, limit, spacing)
 
-    file_name = f"large_linearity_results_exposure.txt"
+    file_name = f"large_linearity_results_exposure_{run_number}.txt"
     with open(OUT_PATH.joinpath(file_name), 'w') as f:
         for row in results:
             f.write(f'{row}\n')
@@ -265,18 +274,40 @@ def linearity_analysis_noise(heights: Optional[List[int]] = None,
     return
 
 
+def run_exposure_measurement(measurements: List[tuple]):
+
+    for i, measurement in enumerate(measurements):
+        linearity_analysis_exposure(*measurement)
+
+    return
+
 def run_linearity_analysis():
 
     data_paths = [
         Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Mean'),
-        Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal'),
+        #Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\YD\Modal'),
         #Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\ND\Mean'),
         #Path(r'D:\Koodailu\Test\ICRF_calibration_and_HDR_images\data\ND\Modal')
     ]
     include_gamma = False
     heights = [1, 2, 5, 10, 20, 50, 100, 200, 500]
+    data_spacings = [300, 250]
+    data_limits = [2, 5]
     powers = [1, 3]
-    powers = None
+
+    exposure_measurement_parameters_1 = (
+        data_paths, include_gamma, data_limits, data_spacings, 1)
+
+    data_spacings = [175]
+    data_limits = [10]
+
+    exposure_measurement_parameters_2 = (
+        data_paths, include_gamma, data_limits, data_spacings, 2)
+
+    exposure_measurements = [exposure_measurement_parameters_1,
+                             exposure_measurement_parameters_2]
+
+    run_exposure_measurement(exposure_measurements)
 
 
 if __name__ == "__main__":

@@ -280,6 +280,7 @@ def create_linearity_plots(data_array: np.ndarray, save_path: Path,
     plt.savefig(fig_path, dpi=300)
     plt.clf()
 
+
 def linear_function(B, x):
     return B[0] + B[1]*x
 
@@ -441,8 +442,8 @@ def analyze_dark_frames(path: Path, threshold: float):
 
 if __name__ == "__main__":
 
-    # linearity_distribution(lower=5/255, upper=250/255, use_std=False,
-    #                       save_image=True, use_relative=True)
-    analyze_dark_frames(DARK_PATH, 10/255)
+    linearity_distribution(lower=5/255, upper=250/255, use_std=False,
+                           save_image=True, use_relative=False)
+    # analyze_dark_frames(DARK_PATH, 10/255)
 
     print('Run script from actual main file!')
