@@ -57,7 +57,7 @@ def bad_pixel_filter(imageSet: ImageSet, darkSet: ImageSet):
     :param darkSet: ImageSet object of dark frame used to map bad pixels.
     :return: Corrected ImageSet.
     """
-    kernel = np.ones((5, 5), dtype=np.float32) / 25
+    kernel = np.ones((5, 5), dtype=np.float64) / 25
     convolved_image = cv.filter2D(imageSet.acq, -1, kernel)
 
     @jit(nopython=True, parallel=True)
@@ -87,21 +87,18 @@ def fixed_pattern_correction(imageSet, flatSet_list):
 
         if imageSet.mag == flatSet.mag:
             if imageSet.ill == flatSet.ill:
-                imageSet.acq = cv.divide(imageSet.acq, flatSet.acq)
+                imageSet.acq = np.divide(imageSet.acq, flatSet.acq)
 
                 # Determine flat field means
                 flat_field_mean_list = flat_field_mean(flatSet, 0)
 
                 # Multiply images by the flat field spatial mean and clip
                 # 32-bit digital numbers to [0,1] range
-                imageSet.acq = np.clip(
-                    multiply_per_channel(flat_field_mean_list,
-                                         imageSet.acq), 0, 1)
-    '''
-                    # Normalize image to 8-bit range for RGB saving
-                    imageSet.acq = cv.normalize(imageSet.acq, None, 0, 255,
-                                                cv.NORM_MINMAX, cv.CV_8U)
-    '''
+                # imageSet.acq = np.clip(
+                #     multiply_per_channel(flat_field_mean_list,
+                #                          imageSet.acq), 0, 1)
+                multiply_per_channel(flat_field_mean_list, imageSet.acq)
+
     return imageSet
 
 
@@ -166,24 +163,23 @@ def uncertainty(acqSet: ImageSet, flatList: List[ImageSet]):
         ff = flatSet.acq
         u_acq = acqSet.std
         u_ff = flatSet.std
-        r, g, b = flat_field_mean(flatSet, 0)
-        ur, ug, ub = flat_field_mean(flatSet, 1)
+        b, g, r = flat_field_mean(flatSet, 0)
+        ub, ug, ur = flat_field_mean(flatSet, 1)
 
-        u_acq_term = cv.divide(u_acq ** 2, ff ** 4)
-        u_acq_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+        u_acq_term = np.divide(u_acq ** 2, ff ** 2)
+        u_acq_term = multiply_per_channel([b ** 2, g ** 2, r ** 2],
                                           u_acq_term)
 
-        u_ff_term = cv.divide((acq) ** 2, ff ** 4)
-        u_ff_term = cv.multiply(u_ff_term, u_ff ** 2)
-        u_ff_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+        u_ff_term = np.divide(acq ** 2, ff ** 4)
+        u_ff_term = np.multiply(u_ff_term, u_ff ** 2)
+        u_ff_term = multiply_per_channel([b ** 2, g ** 2, r ** 2],
                                          u_ff_term)
 
-        u_ffm_term = cv.divide((acq) ** 2, ff ** 2)
-        u_ffm_term = multiply_per_channel([ur ** 2, ug ** 2, ub ** 2],
+        u_ffm_term = np.divide(acq ** 2, ff ** 2)
+        u_ffm_term = multiply_per_channel([ub ** 2, ug ** 2, ur ** 2],
                                           u_ffm_term)
 
-        acqSet.std = np.clip(u_acq_term + u_ff_term + u_ffm_term,
-                             0, 1)
+        acqSet.std = np.sqrt(u_acq_term + u_ff_term + u_ffm_term)
 
     except StopIteration:
 
@@ -216,24 +212,24 @@ def uncertainty_full(acqSet: ImageSet, darkList: List[ImageSet], flatList: List[
         u_acq = acqSet.std
         u_ff = flatSet.std
         u_d = darkSet.std
-        r, g, b = flat_field_mean(flatSet, 0)
-        ur, ug, ub = flat_field_mean(flatSet, 1)
+        b, g, r = flat_field_mean(flatSet, 0)
+        ub, ug, ur = flat_field_mean(flatSet, 1)
 
         u_acq_term = cv.divide(u_acq ** 2, ff ** 4)
-        u_acq_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+        u_acq_term = multiply_per_channel([b ** 2, g ** 2, r ** 2],
                                           u_acq_term)
 
         u_d_term = cv.divide(u_d ** 2, ff ** 4)
-        u_d_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+        u_d_term = multiply_per_channel([b ** 2, g ** 2, r ** 2],
                                         u_d_term)
 
         u_ff_term = cv.divide((acq - d) ** 2, ff ** 4)
         u_ff_term = cv.multiply(u_ff_term, u_ff ** 2)
-        u_ff_term = multiply_per_channel([r ** 2, g ** 2, b ** 2],
+        u_ff_term = multiply_per_channel([b ** 2, g ** 2, r ** 2],
                                          u_ff_term)
 
         u_ffm_term = cv.divide((acq - d) ** 2, ff ** 2)
-        u_ffm_term = multiply_per_channel([ur ** 2, ug ** 2, ub ** 2],
+        u_ffm_term = multiply_per_channel([ub ** 2, ug ** 2, ur ** 2],
                                           u_ffm_term)
 
         acqSet.std = np.clip(u_acq_term + u_d_term + u_ff_term + u_ffm_term,
@@ -306,21 +302,32 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
     acq_list_preloaded = False
     if acq_list is None:
         acq_list = gf.create_imageSets(ACQ_PATH)
-    else:
+    if acq_list[0].acq is not None:
         acq_list_preloaded = True
 
+    dark_list_preloaded = False
     if dark_list is None:
         dark_list = gf.create_imageSets(DARK_PATH)
-    dark_list.sort(key=lambda darkSet: darkSet.exp)
-    for darkSet in dark_list:
-        darkSet.load_acq()
-        # darkSet.load_std() # Not used in current version
+    if dark_list[0].acq is not None:
+        dark_list_preloaded = True
 
+    flat_list_preloaded = False
     if flat_list is None:
         flat_list = gf.create_imageSets(FLAT_PATH)
-    for flatSet in flat_list:
-        flatSet.load_acq()
-        flatSet.load_std()
+    if flat_list[0].acq is not None:
+        flat_list_preloaded = True
+
+    if not dark_list_preloaded:
+        for darkSet in dark_list:
+            darkSet.load_acq()
+            # darkSet.load_std() # Not used in current version
+
+    if not flat_list_preloaded:
+        for flatSet in flat_list:
+            flatSet.load_acq()
+            flatSet.load_std()
+
+    dark_list.sort(key=lambda darkSet: darkSet.exp)
 
     for acqSet in acq_list:
         if not acq_list_preloaded:
@@ -328,7 +335,7 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
             acqSet.load_std()
 
         # Uncertainty
-        acqSet = uncertainty(acqSet, dark_list, flat_list)
+        acqSet = uncertainty(acqSet, flat_list)
 
         # Dark correction
         acqSet = dark_correction(acqSet, dark_list)
@@ -338,7 +345,7 @@ def image_correction(acq_list: Optional[List[ImageSet]] = None,
 
         # Save the corrected images
         if save_to_file:
-            acqSet.save_8bit(OUT_PATH)
+            acqSet.save_8bit(OUT_PATH.joinpath(acqSet.path.name))
             acqSet.acq = None
             acqSet.std = None
 

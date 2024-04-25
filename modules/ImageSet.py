@@ -38,7 +38,7 @@ class ImageSet(object):
                 elif re.match("^[0-9]+.*[xX]$", element):
                     self.mag = element
                 elif re.match("^[0-9]+.*ms$", element):
-                    self.exp = float(element.removesuffix('ms'))
+                    self.exp = float(element.removesuffix('ms'))/1000
                 else:
                     self.subject = element
 
@@ -71,22 +71,37 @@ class ImageSet(object):
 
         return extracted_imageSet
 
-    def load_acq(self):
+    def load_acq(self, bit32: Optional[bool] = False):
 
-        self.acq = cv.imread(str(self.path)).astype(np.float32) / MAX_DN
+        if not bit32:
+            self.acq = cv.imread(str(self.path)).astype(np.float64) / MAX_DN
+        else:
+            self.acq = cv.imread(str(self.path), cv.IMREAD_UNCHANGED)
         self.channels = [0, 1, 2]
-        # self.to_lbgr()
 
-    def load_std(self, STD_data: Optional[np.ndarray] = None):
+    def load_single_acq_to_multiple(self):
+
+        acq = cv.imread(str(self.path)).astype(np.float64) / MAX_DN
+        self.acq = np.concatenate((acq, acq))
+        self.acq = np.concatenate((self.acq, acq))
+        self.channels = [0, 1, 2]
+
+    def load_std(self, STD_data: Optional[np.ndarray] = None, bit32: Optional[bool] = False):
         """
         Loads the error image of an ImageSet object to memory.
         Args:
+            bit32: whether the image to load is already in float or not
             STD_data: Numpy array representing the STD data of pixel values.
         """
 
         std_path = str(self.path).removesuffix('.tif') + ' STD.tif'
         try:
-            self.std = np.sqrt(cv.imread(std_path).astype(np.float32)) / (AVERAGED_FRAMES) / MAX_DN
+            # if not bit32:
+            #     self.std = np.sqrt(cv.imread(std_path).astype(np.float64) / (7 * (AVERAGED_FRAMES - 1) * MAX_DN * AVERAGED_FRAMES))
+            if not bit32:
+                self.std = cv.imread(std_path, cv.IMREAD_UNCHANGED).astype(np.float64)
+            else:
+                self.std = cv.imread(std_path, cv.IMREAD_UNCHANGED).astype(np.float64)
 
         except (FileNotFoundError, AttributeError) as e:
             self.std = calculate_numerical_STD((np.around(self.acq * MAX_DN)).astype(np.dtype('uint8')),
@@ -118,11 +133,14 @@ class ImageSet(object):
 
         np.clip(self.acq, 0, 1)
 
-    def save_32bit(self, save_path: Optional[Path] = None):
+    def save_32bit(self, save_path: Optional[Path] = None,
+                   is_HDR: Optional[bool] = False,
+                   separate_channels: Optional[bool] = False):
         """
         Saves an ImageSet object's acquired image and error image to disk to given
         path into separate BGR channels in 32-bit format.
         Args:
+            is_HDR: whether to add HDR to the end of the filename or not.
             save_path: Full absolute path to save location, including filename.
         """
         if save_path is None:
@@ -135,19 +153,34 @@ class ImageSet(object):
 
         file_path = str(file_path)
 
-        bit32_image = self.acq
-        cv.imwrite(file_path.removesuffix('.tif') + ' blue.tif', bit32_image[:, :, 0])
-        cv.imwrite(file_path.removesuffix('.tif') + ' green.tif', bit32_image[:, :, 1])
-        cv.imwrite(file_path.removesuffix('.tif') + ' red.tif', bit32_image[:, :, 2])
+        if is_HDR:
+            acq_file_suffix = ' HDR.tif'
+            std_file_suffix = ' HDR STD.tif'
+        else:
+            acq_file_suffix = '.tif'
+            std_file_suffix = 'STD.tif'
 
-        if self.std is not None:
-            bit32_image = self.std
-            cv.imwrite(file_path.removesuffix('.tif') + ' STD blue.tif',
-                       bit32_image[:, :, 0])
-            cv.imwrite(file_path.removesuffix('.tif') + ' STD green.tif',
-                       bit32_image[:, :, 1])
-            cv.imwrite(file_path.removesuffix('.tif') + ' STD red.tif',
-                       bit32_image[:, :, 2])
+        if not separate_channels:
+
+            bit32_image = self.acq.astype(np.dtype('float64'))
+            cv.imwrite(file_path.removesuffix('.tif') + acq_file_suffix, bit32_image)
+
+            if self.std is not None:
+                bit32_image = self.std.astype(np.dtype('float64'))
+                cv.imwrite(file_path.removesuffix('.tif') + std_file_suffix, bit32_image)
+
+        else:
+            channel_name = ['blue', 'green', 'red']
+            for c in range(CHANNELS):
+
+                bit32_image = self.acq[:, :, c]
+                cv.imwrite(file_path.removesuffix('.tif')
+                           + acq_file_suffix.replace('.tif', f' {channel_name[c]}.tif'), bit32_image)
+
+                if self.std is not None:
+                    bit32_image = self.std[:, :, c]
+                    cv.imwrite(file_path.removesuffix('.tif')
+                               + std_file_suffix.replace('.tif', f' {channel_name[c]}.tif'), bit32_image)
 
     def save_8bit(self, save_path: Optional[Path] = None,
                   sbgr: Optional[bool] = True):
@@ -182,7 +215,8 @@ class ImageSet(object):
         cv.imwrite(file_path, bit8_image)
 
         if self.std is not None:
-            bit8_image = (np.around((self.std * MAX_DN * AVERAGED_FRAMES)**2)).astype(np.dtype('uint8'))
+            # bit8_image = (np.around((self.std ** 2) * MAX_DN * AVERAGED_FRAMES * (AVERAGED_FRAMES - 1) * 7)).astype(np.dtype('uint8'))
+            bit8_image = self.std
             cv.imwrite(file_path.removesuffix('.tif') + ' STD.tif', bit8_image)
 
 
@@ -190,10 +224,10 @@ def calculate_numerical_STD(acq: np.ndarray, STD_data: np.ndarray):
 
     if STD_data is None:
         STD_data = rd.read_data_from_txt(STD_FILE_NAME)
-    STD_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=(np.dtype('float32')))
+    STD_image = np.zeros((IM_SIZE_Y, IM_SIZE_X, CHANNELS), dtype=(np.dtype('float64')))
 
     for c in range(CHANNELS):
 
-        STD_image[:, :, c] = STD_data[acq[:, :, c], CHANNELS - 1 - c]
+        STD_image[:, :, c] = STD_data[acq[:, :, c], c] / np.sqrt(AVERAGED_FRAMES)
 
     return STD_image

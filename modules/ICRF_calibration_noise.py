@@ -1,9 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-from scipy.optimize import differential_evolution
 from scipy.optimize._differentialevolution import DifferentialEvolutionSolver
 from typing import Optional
+from joblib import delayed, parallel
+
+import read_data
 from global_settings import *
 
 ICRF = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
@@ -27,8 +29,7 @@ def _process_datapoint_distances(mean_data, number_of_heights):
     edge_distances = np.zeros((number_of_dists, number_of_heights, 3),
                               dtype=int)
 
-    for i in range(number_of_dists-1):
-
+    for i in range(MIN_DN + 5, MAX_DN - 6):
         edge_distances[i, :, :] = _datapoint_distances(mean_data[i, :],
                                                        number_of_heights)
 
@@ -58,14 +59,13 @@ def _datapoint_distances(dist, number_of_heights):
     # Determine the location/index of the distribution mode.
     mode = np.argmax(dist)
     second_mode = None
-    if mode != dist_length-1:
+    if mode != dist_length - 1:
         try:
-            second_mode = np.argmax(dist[mode+1:-1])
+            second_mode = np.argmax(dist[mode + 1:-1])
         except ValueError:
             second_mode = None
     if second_mode is not None:
         if dist[mode] == dist[second_mode]:
-
             print('Second equal mode found!')
 
     # Determine height step based on distribution peak count and desired
@@ -91,7 +91,7 @@ def _datapoint_distances(dist, number_of_heights):
 
             # Mark the current height as invalid if reach max 1023 datapoint
             # and break loop.
-            if m >= dist_length-1:
+            if m >= dist_length - 1:
                 break
 
             # Break loop if stepping outside of distribution.
@@ -194,8 +194,7 @@ def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
     return iterated_ICRF
 
 
-def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
-                     edge_distances, channel):
+def _energy_function(PCA_params, mean_ICRF, PCA_array, edge_distances, channel):
     """ The energy function, whose value is subject to minimization. Iterates
     ICRF on a global scale.
 
@@ -205,8 +204,6 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
         mean_ICRF: Numpy array containing the [0,1] normalized mean irradiance
             datapoints.
         PCA_array: Numpy array containing the principal component vectors.
-        evaluation_heights: the number of heights at which the datapoint
-            distances to the edges of the distribution have been calculated.
         edge_distances: the distances array calculated in the function
             datapoint_distances.
 
@@ -220,17 +217,17 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, evaluation_heights,
     ICRF[:, channel] += 1 - ICRF[-1, channel]
     ICRF[0, channel] = 0
 
-    lower_ignore = 2
-    upper_ignore = 2
+    lower_ignore = 5
+    upper_ignore = 5
 
     if np.max(ICRF[:, channel]) > 1 or np.min(ICRF[:, channel]) < 0:
         energy = np.inf
         return energy
 
-    for i in range(MIN_DN + lower_ignore, BITS - upper_ignore):
+    for i in range(MIN_DN + lower_ignore, MAX_DN - upper_ignore):
         energy += _skewness_evaluation(edge_distances[i, :, :], ICRF[:, channel])
 
-    energy /= (BITS - upper_ignore - lower_ignore - MIN_DN)
+    energy /= (MAX_DN - upper_ignore - lower_ignore - MIN_DN)
 
     return energy
 
@@ -252,7 +249,6 @@ def interpolate_ICRF(ICRF_array: np.ndarray):
     interpolated_ICRF = np.zeros((BITS, CHANNELS), dtype=float)
 
     for c in range(CHANNELS):
-
         y_old = ICRF_array[:, c]
         interpolated_ICRF[:, c] = np.interp(x_new, x_old, y_old)
 
@@ -302,16 +298,13 @@ def calibration(evaluation_heights, lower_limit, upper_limit,
                   [lower_limit, upper_limit]]
         x0 = [3, 0, 0, 0, 0, 0]
 
-    for i in range(len(MEAN_DATA_FILES)):
-        # Get the filenames from the attribute arrays.
-        mean_file_name = MEAN_DATA_FILES[i]
-        PCA_file_name = PCA_FILES[i]
-        mean_ICRF_file_name = MEAN_ICRF_FILES[i]
+    def solve_channel(PCA_file_name: str, mean_ICRF_file_name: str,
+                      mean_data_file_name: str, channel: int):
 
-        # Load mean data, principal component data and mean ICRF data into
-        # numpy arrays.
-        mean_data_array = rd.read_data_from_txt(mean_file_name)
+        global ICRF
+
         PCA_array = rd.read_data_from_txt(PCA_file_name)
+        mean_data_array = read_data.read_data_from_txt(mean_data_file_name)
 
         if use_mean_ICRF:
             mean_ICRF_array = rd.read_data_from_txt(mean_ICRF_file_name)
@@ -322,48 +315,40 @@ def calibration(evaluation_heights, lower_limit, upper_limit,
                                                       evaluation_heights)
 
         initialEnergy = _energy_function(x0, mean_ICRF_array,
-                                         PCA_array, evaluation_heights,
-                                         edge_distances, i)
-        initial_energy_array[i] = initialEnergy
-        print(initialEnergy)
+                                         PCA_array, edge_distances, channel)
+        initial_energy_array[channel] = initialEnergy
+        print(f'Channel {channel} initial energy: {initialEnergy}')
 
+        number_of_iterations = 0
         # Access DifferentialEvolutionSolver directly to stop iteration if
         # solution has converged or energy function value is under given limit.
         with DifferentialEvolutionSolver(_energy_function, limits, args=(
-                mean_ICRF_array, PCA_array, evaluation_heights, edge_distances, i),
-                                         strategy='best1bin', tol=0.01,
-                                         x0=x0) as solver:
+                mean_ICRF_array, PCA_array, edge_distances, channel),
+                                         strategy='best1bin', tol=0.001,
+                                         x0=x0, mutation=(0, 1.95)) as solver:
             for step in solver:
+                number_of_iterations += 1
                 step = next(solver)  # Returns a tuple of xk and func evaluation
                 func_value = step[1]  # Retrieves the func evaluation
-                print(func_value)
+                if number_of_iterations % 5 == 0:
+                    print(f'Channel {channel} value: {func_value} on step {number_of_iterations}')
                 if solver.converged():
                     break
 
         result = solver.x
-        ICRF[:, i] = _inverse_camera_response_function(mean_ICRF_array,
-                                                       PCA_array, result)
+        ICRF[:, channel] = _inverse_camera_response_function(mean_ICRF_array,
+                                                             PCA_array, result)
         del solver
-        print(f'Result: f{result}')
-        final_energy_array[i] = func_value
-        '''
-        result = differential_evolution(_energy_function, limits, args=(
-            mean_ICRF_array, PCA_array, evaluation_heights, edge_distances),
-                                        strategy='best1bin', disp=False,
-                                        maxiter=10000)
+        print(f'Channel {channel} result: f{result}, number of iterations: {number_of_iterations}')
+        final_energy_array[channel] = func_value
 
-        print('Status : %s' % result['message'])
-        print('Total Evaluations: %d' % result['nfev'])
-        solution = result['x']
-        evaluation = _energy_function(solution, mean_ICRF_array, PCA_array,
-                                      evaluation_heights, edge_distances)
-        final_energy_array[i] = evaluation
-        print('Solution: f(%s) = %.5f' % (solution, evaluation))
-        ICRF[:, i] = _inverse_camera_response_function(mean_ICRF_array,
-                                                       PCA_array, solution)
-        '''
+    parallel.Parallel(n_jobs=CHANNELS, prefer="threads") \
+        (delayed(solve_channel)(PCA_FILES[c], MEAN_ICRF_FILES[c], MEAN_DATA_FILES[c], c) for c in range(CHANNELS))
+
     ICRF_array = ICRF
 
+    # The ICRF might be shifted on the y-axis, so we adjust it back to [0,1]
+    # here.
     ICRF_array[:, 0] += 1 - ICRF_array[-1, 0]
     ICRF_array[:, 1] += 1 - ICRF_array[-1, 1]
     ICRF_array[:, 2] += 1 - ICRF_array[-1, 2]
@@ -371,6 +356,11 @@ def calibration(evaluation_heights, lower_limit, upper_limit,
     ICRF_array[0, 0] = 0
     ICRF_array[0, 1] = 0
     ICRF_array[0, 2] = 0
+
+    # Clipping values just in case. Shouldn't be needed as the ICRF should be
+    # continuously increasing between [0,1] without going outside that interval.
+    ICRF_array[ICRF_array < 0] = 0
+    ICRF_array[ICRF_array > 1] = 1
 
     ICRF_interpolated = interpolate_ICRF(ICRF_array)
 
@@ -404,7 +394,9 @@ if __name__ == "__main__":
         skew_list.append(skew)
         plt.stairs(hist[i, :], bins)
         plt.title(f'Skew: {skew}')
-        path = Path(r'E:\Kouluhommat\MSc SPV\Mittaukset jne\Analysis\ICRF calibration and HDR images\test output').joinpath(f'Dist{ i}.png')
+        path = Path(
+            r'E:\Kouluhommat\MSc SPV\Mittaukset jne\Analysis\ICRF calibration and HDR images\test output').joinpath(
+            f'Dist{i}.png')
         plt.savefig(path, dpi=500)
         plt.clf()
 

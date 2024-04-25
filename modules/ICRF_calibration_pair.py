@@ -42,64 +42,38 @@ def _inverse_camera_response_function(mean_ICRF, PCA_array, PCA_params):
     return iterated_ICRF
 
 
-def analyze_linearity(sublists_of_imageSets: List[List[ImageSet]],
-                      channel: int,
+def analyze_linearity(list_of_imageSets: List[ImageSet],
                       use_relative: Optional[bool] = True):
     """
     Analyze the linearity of images taken at different exposures.
     Args:
-        channel: the channel subject to analysis
-        sublists_of_imageSets: Optionally pass sublist from previous calculations.
+        list_of_imageSets: Optionally pass list from previous calculations.
         use_relative: whether to utilize relative or absolute pixel values.
     Returns:
     """
-    global ICRF
     global global_upper_data_limit
     global global_lower_data_limit
     results = []
-    lower = global_lower_data_limit
-    upper = global_upper_data_limit
+    lower = global_lower_data_limit/MAX_DN
+    upper = global_upper_data_limit/MAX_DN
 
-    lower = ICRF[lower, channel]
-    upper = ICRF[upper, channel]
+    x = list_of_imageSets[0]
+    y = list_of_imageSets[1]
 
-    for sublist in sublists_of_imageSets:
+    range_mask = (y.acq < lower) | (y.acq > upper)
+    y.acq[range_mask] = np.nan
+    range_mask = (x.acq < lower) | (x.acq > upper)
+    x.acq[range_mask] = np.nan
+    del range_mask
 
-        if len(sublist) < 2:
-            continue
+    y = gf.multiply_imageSets(y, 0.5)
 
-        for i in range(len(sublist)):
-            for j in range(i + 1, len(sublist)):
+    linearSet = gf.subtract_imageSets(x, y, use_std=False)
 
-                if i == j:
-                    continue
+    acq = abs(linearSet.acq)
 
-                x = sublist[i]
-                y = sublist[j]
-
-                ratio = x.exp / y.exp
-                # if ratio < 0.1:
-                #    break
-
-                range_mask = (y.acq < lower) | (y.acq > upper)
-                y.acq[range_mask] = np.nan
-                range_mask = (x.acq < lower) | (x.acq > upper)
-                x.acq[range_mask] = np.nan
-                del range_mask
-
-                y = gf.multiply_imageSets(y, ratio, use_std=False)
-                linearSet = gf.subtract_imageSets(x, y, use_std=False)
-
-                if use_relative:
-                    linearSet = gf.divide_imageSets(linearSet, y, use_std=False)
-
-                if use_relative:
-                    acq = abs(linearSet.acq)
-                else:
-                    acq = abs(linearSet.acq * MAX_DN)
-
-                result = np.nansum(acq)
-                results.append(result)
+    result = np.nanmean(acq)*MAX_DN
+    results.append(result)
 
     data_array = np.array(results)
 
@@ -134,29 +108,12 @@ def _energy_function(PCA_params, mean_ICRF, PCA_array, acq_sublists, channel):
         energy = np.inf
         return energy
 
-    acq_sublists_iter = gf.copy_nested_list(acq_sublists, channel)
-    for sublist in acq_sublists_iter:
-        for imageSet in sublist:
-            gf.linearize_ImageSet(imageSet, ICRF[:, [channel]], ICRF_diff=None, gaussian_blur=False)
+    acq_sublists_iter = gf.copy_list(acq_sublists, channel)
+    for imageSet in acq_sublists_iter:
 
-    linearity_data = analyze_linearity(acq_sublists_iter, use_relative=True, channel=channel)
-    energy = np.nanmean(linearity_data)
-    if np.isnan(energy):
-        energy = np.Inf
+        gf.linearize_ImageSet(imageSet, ICRF[:, [channel]], ICRF_diff=None, gaussian_blur=False)
 
-    return energy
-
-
-def _initial_energy_function(x, acq_sublists, channel):
-    initial_function = np.linspace(0, 1, BITS) ** x
-    initial_function = np.expand_dims(initial_function, axis=1)
-
-    acq_sublists_iter = gf.copy_nested_list(acq_sublists, channel)
-    for sublist in acq_sublists_iter:
-        for imageSet in sublist:
-            gf.linearize_ImageSet(imageSet, initial_function, ICRF_diff=None, gaussian_blur=False)
-
-    linearity_data = analyze_linearity(acq_sublists_iter, use_relative=True, channel=channel)
+    linearity_data = analyze_linearity(acq_sublists_iter, use_relative=True)
     energy = np.nanmean(linearity_data)
     if np.isnan(energy):
         energy = np.Inf
@@ -179,22 +136,24 @@ def interpolate_ICRF(ICRF_array):
     return interpolated_ICRF
 
 
-def calibration(lower_PCA_limit, upper_PCA_limit,
+def calibration(short_imageSet: ImageSet, long_imageSet: ImageSet,
+                lower_PCA_limit, upper_PCA_limit,
                 initial_function: Optional[np.ndarray] = None,
-                data_spacing: Optional[int | tuple[int, int]] = 150,
-                data_limits: Optional[tuple[int, int]] = (5, 250)):
+                lower_data_limit: Optional[int] = 2,
+                upper_data_limit: Optional[int] = 253,
+                data_spacing: Optional[int] = None):
     """ The main function running the ICRF calibration process that is called
     from outside the module.
 
        Args:
-           data_limits: tuple of ints representing the lower and upper limits for
-                including pixels in linearity analysis.
+           long_imageSet: brighter image
+           short_imageSet: dimmer image
            initial_function: base function from which iteration starts.
                distances to the edges of the distribution have been calculated.
            lower_PCA_limit: a lower limit for the PCA coefficient values.
            upper_PCA_limit: an upper limit for the PCA coefficient values.
-           data_spacing: used to determine the amount of pixels used in linearity
-                analysis.
+           lower_data_limit: pixel values under this are ignored in linearity
+           upper_data_limit: pixel values above this are ignored in linearity
 
        Return:
             ICRF_array: a Numpy float array containing the optimized ICRFs of
@@ -208,8 +167,8 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
     global use_mean_ICRF
     global global_upper_data_limit
     global global_lower_data_limit
-    global_upper_data_limit = data_limits[1]
-    global_lower_data_limit = data_limits[0]
+    global_upper_data_limit = upper_data_limit
+    global_lower_data_limit = lower_data_limit
     final_energy_array = np.zeros(CHANNELS, dtype=float)
     initial_energy_array = np.zeros(CHANNELS, dtype=float)
 
@@ -223,7 +182,7 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
         x0 = [0, 0, 0, 0, 0]
     else:
         use_mean_ICRF = False
-        limits = [[1, 8],
+        limits = [[0.5, 10],
                   [lower_PCA_limit, upper_PCA_limit],
                   [lower_PCA_limit, upper_PCA_limit],
                   [lower_PCA_limit, upper_PCA_limit],
@@ -235,23 +194,12 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
 
     # Initialize image lists and name lists
 
-    acq_list = gf.create_imageSets(ACQ_PATH)
-    for imageSet in acq_list:
-        imageSet.load_acq()
-        if type(data_spacing) is tuple:
-            x_step = data_spacing[0]
-            y_step = data_spacing[1]
-        else:
-            x_step = data_spacing
-            y_step = data_spacing
-        imageSet.acq = gf.choose_evenly_spaced_points(imageSet.acq, x_step, y_step)
-
-    pixel_ratio = acq_list[0].acq[:, :, 0].size / (IM_SIZE_Y * IM_SIZE_X)
-
-    acq_sublists = gf.separate_to_sublists(acq_list)
-    for sublist in acq_sublists:
-        sublist.sort(key=lambda imageSet: imageSet.exp)
-    del acq_list
+    short_imageSet.load_acq()
+    long_imageSet.load_acq()
+    acq_list = [short_imageSet, long_imageSet]
+    if data_spacing is not None:
+        short_imageSet.acq = gf.choose_evenly_spaced_points(short_imageSet.acq, data_spacing)
+        long_imageSet.acq = gf.choose_evenly_spaced_points(long_imageSet.acq, data_spacing)
 
     def solve_channel(PCA_file_name: str, mean_ICRF_file_name: str,
                       channel: int):
@@ -268,19 +216,19 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
         # Access DifferentialEvolutionSolver directly to stop iteration if
         # solution has converged or energy function value is under given limit.
         with DifferentialEvolutionSolver(_energy_function, limits, args=(
-                mean_ICRF_array, PCA_array, acq_sublists, channel),
-                                         strategy='currenttobest1bin', tol=0.01,
+                mean_ICRF_array, PCA_array, acq_list, channel),
+                                         strategy='best1bin', tol=0.1,
                                          x0=x0, mutation=(0, 1.95),
-                                         recombination=0.4,
-                                         init='sobol', seed=1995) as solver:  # seed=1995
+                                         recombination=0.45,
+                                         init='sobol') as solver:
             for step in solver:
                 number_of_iterations += 1
                 step = next(solver)  # Returns a tuple of xk and func evaluation
                 func_value = step[1]  # Retrieves the func evaluation
-                if number_of_iterations % 20 == 0:
+                if number_of_iterations % 5 == 0:
                     print(
                         f'Channel {channel} value: {func_value} on step {number_of_iterations}')
-                if solver.converged() or number_of_iterations == 3000:  # or func_value < limit:
+                if solver.converged():
                     break
 
         result = solver.x
@@ -290,7 +238,7 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
         del solver
         print(f'Channel {channel} result: f{result}, number of iterations: {number_of_iterations}')
 
-    parallel.Parallel(n_jobs=CHANNELS, prefer="threads") \
+    parallel.Parallel(n_jobs=CHANNELS, prefer="threads")\
         (delayed(solve_channel)(PCA_FILES[c], MEAN_ICRF_FILES[c], c) for c in range(CHANNELS))
 
     ICRF_array = ICRF
@@ -312,10 +260,11 @@ def calibration(lower_PCA_limit, upper_PCA_limit,
 
     ICRF_interpolated = interpolate_ICRF(ICRF_array)
 
-    return ICRF_interpolated, initial_energy_array, final_energy_array, pixel_ratio
+    return ICRF_interpolated, initial_energy_array, final_energy_array
 
 
 if __name__ == "__main__":
+
     arr = np.arange(27).reshape((3, 3, 3)).astype(float)
     '''
     arr[:,:,1] = np.nan
@@ -326,6 +275,6 @@ if __name__ == "__main__":
     print(arr[:, :, 0])
     ch = [0]
     help = np.take(arr, ch, axis=2)
-    print(help[:, :, 0])
+    print(help[:,:,0])
 
     print('Run script from main file!')

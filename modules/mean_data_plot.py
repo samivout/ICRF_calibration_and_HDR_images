@@ -2,6 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import seaborn as sns
+from typing import Optional
+import general_functions as gf
+from scipy.signal import savgol_filter
+
+import general_functions
 from global_settings import *
 
 '''
@@ -99,6 +104,8 @@ def plot_ICRF(ICRF_array, name):
 
     x_range = np.linspace(0, 1, DATAPOINTS)
 
+    plt.ylabel('Normalized irradiance')
+    plt.xlabel('Normalized brightness')
     plt.plot(x_range, ICRF_array[:, 0], color='b')
     plt.plot(x_range, ICRF_array[:, 1], color='g')
     plt.plot(x_range, ICRF_array[:, 2], color='r')
@@ -211,6 +218,8 @@ def plot_ICRF_PCA():
 
 def mean_data_plot():
 
+    x_range = np.linspace(0, 1, BITS)
+    dx = 1 / (BITS - 1)
     mean_data_array = np.zeros((BITS, DATAPOINTS, CHANNELS), dtype=int)
     mean_ICRF_array = np.zeros((DATAPOINTS, CHANNELS), dtype=float)
 
@@ -223,6 +232,24 @@ def mean_data_plot():
         mean_ICRF_array[:, i] = rd.read_data_from_txt(mean_ICRF_file_name)
 
     ICRF_calibrated = rd.read_data_from_txt(ICRF_CALIBRATED_FILE)
+    ICRF_diff = np.zeros_like(ICRF_calibrated)
+
+    for c in range(CHANNELS):
+
+        if c == 0:
+            color = 'blue'
+        elif c == 1:
+            color = 'green'
+        else:
+            color = 'red'
+
+        ICRF_diff[:, c] = np.gradient(ICRF_calibrated[:, c], dx)
+        plt.plot(x_range, ICRF_diff[:, c], color=color)
+
+    np.savetxt(OUTPUT_DIRECTORY.joinpath('ICRF_diff.txt'), ICRF_diff)
+    plt.savefig(OUTPUT_DIRECTORY.joinpath('ICRF_diff.png'), dpi=300)
+    plt.clf()
+
     plot_ICRF(mean_ICRF_array, 'mean_ICRF.png')
     plot_ICRF(ICRF_calibrated, 'ICRF_calibrated.png')
     plot_noise_profiles_2d(mean_data_array)
@@ -231,9 +258,138 @@ def mean_data_plot():
     print_mean_data_mode(mean_data_array)
 
 
+def calculate_and_plot_mean_ICRF(filepath: Optional[Path] = None):
+
+    if filepath is None:
+        filepath = gf.get_filepath_dialog('Choose ICRF file')
+
+    path = filepath.parent
+    name = filepath.name.replace('.txt', 'png')
+    ICRF = rd.read_data_from_txt(filepath, str(filepath.parent))
+
+    mean_ICRF = np.mean(ICRF, axis=1)
+    np.savetxt(path.joinpath('mean_ICRF.txt'), mean_ICRF)
+    x_range = np.linspace(0, 1, DATAPOINTS)
+
+    plt.ylabel('Normalized irradiance')
+    plt.xlabel('Normalized brightness')
+    plt.plot(x_range, mean_ICRF)
+    plt.savefig(path.joinpath(name), dpi=300)
+    plt.clf()
+
+    return
+
+
+def calculate_mean_ICRF(filepath_1: Optional[Path] = None,
+                        filepath_2: Optional[Path] = None):
+
+    if filepath_1 is None:
+        filepath_1 = gf.get_filepath_dialog('Choose ICRF file')
+
+    if filepath_2 is None:
+        filepath_2 = gf.get_filepath_dialog('Choose ICRF file')
+
+    ICRF_1 = rd.read_data_from_txt(filepath_1, str(filepath_1.parent))
+    ICRF_2 = rd.read_data_from_txt(filepath_1, str(filepath_2.parent))
+
+    ICRF_mean = (ICRF_1 + ICRF_2) / 2
+
+    np.savetxt(OUTPUT_DIRECTORY.joinpath('combined_ICRF.txt'), ICRF_mean)
+
+    return
+
+
+def plot_two_ICRF_and_calculate_RMSE(filepath1: Optional[Path] = None,
+                                     filepath2: Optional[Path] = None):
+
+    if filepath1 is None:
+        filepath1 = gf.get_filepath_dialog('Choose ICRF file')
+
+    if filepath2 is None:
+        filepath2 = gf.get_filepath_dialog('Choose ICRF file')
+
+    path = filepath2.parent
+    name = 'ICRF_RMSE.png'
+
+    ICRF1 = rd.read_data_from_txt(filepath1, str(filepath1.parent))
+    ICRF2 = rd.read_data_from_txt(filepath2, str(filepath2.parent))
+
+    RMSE = np.sqrt(np.mean((ICRF1-ICRF2)**2))
+
+    x_range = np.linspace(0, 1, DATAPOINTS)
+    plot_title = f'RMSE: {RMSE:.4f}'
+
+    plt.title(plot_title)
+    plt.ylabel('Normalized irradiance')
+    plt.xlabel('Normalized brightness')
+    plt.plot(x_range, ICRF1, c='r')
+    plt.plot(x_range, ICRF2, c='b')
+    plt.savefig(path.joinpath(name), dpi=300)
+    plt.clf()
+
+
+def smoothen_ICRF(ICRF_path: Optional[Path] = None):
+
+    x_range = np.linspace(0, 1, BITS)
+    dx = 2 / (BITS - 1)
+
+    if ICRF_path is None:
+        ICRF_path = gf.get_filepath_dialog('Choose ICRF file')
+
+    ICRF = rd.read_data_from_txt(ICRF_path.name, ICRF_path.parent)
+    ICRF_smoothed = np.zeros_like(ICRF)
+    ICRF_smoothed_diff = np.zeros_like(ICRF)
+
+    fig, axes = plt.subplots(1, CHANNELS, figsize=(20, 5))
+
+    for c, ax in enumerate(axes):
+
+        if c == 0:
+            color = 'Blue'
+        elif c == 1:
+            color = 'Green'
+        else:
+            color = 'Red'
+
+        ICRF_smoothed[:, c] = savgol_filter(ICRF[:, c], 6, 2)
+        ICRF_smoothed[0, c] = 0
+        ICRF_smoothed[-1, c] = 1
+        ICRF_smoothed_diff[:, c] = np.gradient(ICRF_smoothed[:, c], dx)
+        RMSE = np.sqrt(np.mean(ICRF_smoothed[:, c] - ICRF[:, c]) ** 2)
+        ax.plot(x_range, ICRF_smoothed[:, c], color='red')
+        ax.plot(x_range, ICRF[:, c], color='blue', alpha=0.6)
+        ax.set_title(f'{color}: RMSE = {RMSE: .4f}')
+
+    np.savetxt(OUTPUT_DIRECTORY.joinpath('ICRF_smoothed.txt'), ICRF_smoothed)
+    plt.savefig(OUTPUT_DIRECTORY.joinpath('ICRF_smoothed.png'), dpi=300)
+    plt.clf()
+
+    for c in range(CHANNELS):
+
+        if c == 0:
+            color = 'Blue'
+        elif c == 1:
+            color = 'Green'
+        else:
+            color = 'Red'
+
+        plt.plot(x_range, ICRF_smoothed_diff[:, c], color=color)
+
+    plt.axvline(LOWER_LIN_LIM/MAX_DN, color='0', alpha=0.5)
+    plt.axvline(UPPER_LIN_LIM/MAX_DN, color='0', alpha=0.5)
+    plt.savefig(OUTPUT_DIRECTORY.joinpath('ICRF_smoothed_diff.png'), dpi=300)
+
+    return
+
+
+
 if __name__ == "__main__":
 
+    # calculate_mean_ICRF()
     mean_data_plot()
-    plot_PCA()
+    # plot_PCA()
     # plot_dorf_PCA()
     # plot_ICRF_PCA()
+    # calculate_and_plot_mean_ICRF()
+    # plot_two_ICRF_and_calculate_RMSE()
+    # smoothen_ICRF()

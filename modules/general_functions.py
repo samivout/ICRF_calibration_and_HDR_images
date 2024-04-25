@@ -7,6 +7,7 @@ from typing import Optional
 from scipy.ndimage.filters import gaussian_filter
 from joblib import delayed, parallel
 import cv2 as cv
+import matplotlib as plt
 from global_settings import*
 
 
@@ -50,6 +51,27 @@ def separate_to_sublists(list_of_ImageSets: List[ImageSet]):
                 break
 
     return list_of_sublists
+
+
+def copy_list(list_of_imageSets: List[ImageSet],
+              channel: Optional[int | List[int]] = None):
+    """
+    Create a copy of a nested list of ImageSet lists with single channels.
+    Args:
+        list_of_imageSets: list to be copied.
+        channel: integer or list of integers representing the channel(s) to be
+            copied. None to copy no channels.
+
+    Returns: nested list of ImageSet objects with single channel acq and std.
+    """
+    ret_list = []
+
+    for imageSet in list_of_imageSets:
+
+        extracted_set = imageSet.copy(channel)
+        ret_list.append(extracted_set)
+
+    return ret_list
 
 
 def copy_nested_list(list_of_sublists: List[List[ImageSet]],
@@ -99,7 +121,7 @@ def divide_imageSets(im0: ImageSet, im1: ImageSet | float,
         New ImageSet object with num as the copy base.
     """
     x0 = im0.acq
-    both_imageSets = type(im1) is ImageSet
+    both_imageSets = type(im1) is not float
 
     if both_imageSets:
         x1 = im1.acq
@@ -159,7 +181,7 @@ def multiply_imageSets(im0: ImageSet, im1: ImageSet | float,
         New ImageSet object with x0 as the copy base.
     """
     x0 = im0.acq
-    both_imageSets = type(im1) is ImageSet
+    both_imageSets = type(im1) is not float
 
     if both_imageSets:
         x1 = im1.acq
@@ -214,7 +236,7 @@ def add_imageSets(im0: ImageSet, im1: ImageSet | float,
         New ImageSet object with x0 as copy base.
     """
     x0 = im0.acq
-    both_imageSets = type(im1) is ImageSet
+    both_imageSets = type(im1) is not float
 
     if both_imageSets:
         x1 = im1.acq
@@ -266,7 +288,7 @@ def subtract_imageSets(im0: ImageSet, im1: ImageSet | float,
         New ImageSet object with x0 as copy base.
     """
     x0 = im0.acq
-    both_imageSets = type(im1) is ImageSet
+    both_imageSets = type(im1) is not float
 
     if both_imageSets:
         x1 = im1.acq
@@ -340,7 +362,8 @@ def interpolate_frames(x0, x1, exp):
 def linearize_ImageSet(imageSet: ImageSet,
                        ICRF: np.ndarray,
                        ICRF_diff: Optional[np.ndarray] = None,
-                       gaussian_blur: Optional[bool] = True):
+                       gaussian_blur: Optional[bool] = False,
+                       full_process: Optional[bool] = False):
     """
     Linearizes an input image using an ICRF. Additionally, if a derivative of
     the ICRF and an array representing the standard deviations of a pixel value
@@ -363,21 +386,21 @@ def linearize_ImageSet(imageSet: ImageSet,
     if ICRF_diff is not None and std is not None:
         use_std = True
 
-    acq_new = np.zeros(np.shape(imageSet.acq), dtype=np.dtype('float32'))
+    acq_new = np.zeros(np.shape(imageSet.acq), dtype=np.dtype('float64'))
     if use_std:
-        std_new = np.zeros(np.shape(imageSet.acq), dtype=np.dtype('float32'))
+        std_new = np.zeros(np.shape(imageSet.acq), dtype=np.dtype('float64'))
 
     def channel_loop(acq_c: np.ndarray, ICRF_c: np.ndarray, std_c: np.ndarray,
-                     ICRF_diff_c: np.ndarray, gauss: bool):
+                     ICRF_diff_c: np.ndarray, gauss: bool, full: bool):
 
-        ret = linearize_channel(acq_c, ICRF_c, std_c, ICRF_diff_c, gauss)
+        ret = linearize_channel(acq_c, ICRF_c, std_c, ICRF_diff_c, gauss, full)
 
         return ret
 
     if use_std:
-        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq[:, :, c], ICRF[:, c], std[:, :, c], ICRF_diff[:, c], gaussian_blur) for c in range(channels))
+        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq[:, :, c], ICRF[:, c], std[:, :, c], ICRF_diff[:, c], gaussian_blur, full_process) for c in range(channels))
     else:
-        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq_c=acq[:, :, c], ICRF_c=ICRF[:, c], std_c=None, ICRF_diff_c=None, gauss=gaussian_blur) for c in range(channels))
+        sub_results = parallel.Parallel(n_jobs=channels, prefer="threads")(delayed(channel_loop)(acq_c=acq[:, :, c], ICRF_c=ICRF[:, c], std_c=None, ICRF_diff_c=None, gauss=gaussian_blur, full=full_process) for c in range(channels))
 
     for c in range(channels):
         channel_res = sub_results[c]
@@ -399,10 +422,11 @@ def linearize_channel(channel: np.ndarray,
                       ICRF: np.ndarray,
                       channel_std: Optional[np.ndarray] = None,
                       ICRF_diff: Optional[np.ndarray] = None,
-                      gaussian_blur: Optional[bool] = True):
+                      gaussian_blur: Optional[bool] = False,
+                      full_process: Optional[bool] = False):
 
     channel = (np.around(channel * MAX_DN)).astype(int)
-    linear_channel = (ICRF[channel]).astype(np.dtype('float32'))
+    linear_channel = (ICRF[channel]).astype(np.dtype('float64'))
     if gaussian_blur:
         linear_channel = gaussian_filter(linear_channel, sigma=1)
 
@@ -413,7 +437,10 @@ def linearize_channel(channel: np.ndarray,
     if not use_std:
         return [linear_channel]
 
-    linear_std = (ICRF_diff[channel] * channel_std).astype(np.dtype('float32'))
+    if full_process:
+        linear_std = (ICRF_diff[channel]).astype(np.dtype('float64'))
+    else:
+        linear_std = (ICRF_diff[channel] * channel_std).astype(np.dtype('float64'))
 
     if gaussian_blur:
         linear_std = gaussian_filter(linear_std, sigma=1)
@@ -440,6 +467,51 @@ def create_imageSets(path: Path):
             list_of_ImageSets.append(imageSet)
 
     return list_of_ImageSets
+
+
+def merge_cells(table, cells):
+    '''
+    Merge N matplotlib.Table cells
+
+    Parameters
+    -----------
+    table: matplotlib.Table
+        the table
+    cells: list[set]
+        list of sets od the table coordinates
+        - example: [(0,1), (0,0), (0,2)]
+
+    Notes
+    ------
+    https://stackoverflow.com/a/53819765/12684122
+    '''
+    cells_array = [np.asarray(c) for c in cells]
+    h = np.array([cells_array[i + 1][0] - cells_array[i][0] for i in range(len(cells_array) - 1)])
+    v = np.array([cells_array[i + 1][1] - cells_array[i][1] for i in range(len(cells_array) - 1)])
+
+    # if it's a horizontal merge, all values for `h` are 0
+    if not np.any(h):
+        # sort by horizontal coord
+        cells = np.array(sorted(list(cells), key=lambda v: v[1]))
+        edges = ['BTL'] + ['BT' for i in range(len(cells) - 2)] + ['BTR']
+    elif not np.any(v):
+        cells = np.array(sorted(list(cells), key=lambda h: h[0]))
+        edges = ['TRL'] + ['RL' for i in range(len(cells) - 2)] + ['BRL']
+    else:
+        raise ValueError("Only horizontal and vertical merges allowed")
+
+    for cell, e in zip(cells, edges):
+        table[cell[0], cell[1]].visible_edges = e
+
+    txts = [table[cell[0], cell[1]].get_text() for cell in cells]
+    tpos = [np.array(t.get_position()) for t in txts]
+
+    # transpose the text of the left cell
+    trans = (tpos[-1] - tpos[0]) / 2
+    # didn't had to check for ha because I only want ha='center'
+    txts[0].set_transform(plt.transforms.Affine2D().translate(*trans))
+    for txt in txts[1:]:
+        txt.set_visible(False)
 
 
 def show_image(input_image: Optional[ImageSet] = None):
@@ -474,14 +546,14 @@ def get_filepath_dialog(title: str):
     if file is not None:
         return Path(file)
 
-    return
+    return None
 
 
 if __name__ == "__main__":
 
-    test_array = np.zeros((IM_SIZE_X, IM_SIZE_Y), dtype=int)
+    test_array = np.zeros((IM_SIZE_Y, IM_SIZE_X), dtype=int)
     test_array_size = test_array.size
-    sampled_array = choose_evenly_spaced_points(test_array, 100)
+    sampled_array = choose_evenly_spaced_points(test_array, 15)
     sampled_array_size = sampled_array.size
     ratio = sampled_array_size/test_array_size
     print(f'Test array size: {test_array_size}')
