@@ -490,7 +490,8 @@ def HDR_zone_analysis(imageSet_1: Optional[ImageSet] = None,
                         site_slice = imageSet.acq[i * ROI_dx: (i + 1) * ROI_dx - 1, j * ROI_dy: (j + 1) * ROI_dy - 1, c]
                         site_means[i, j, c] = np.nanmean(site_slice)
                         site_slice = imageSet.std[i * ROI_dx: (i + 1) * ROI_dx - 1, j * ROI_dy: (j + 1) * ROI_dy - 1, c]
-                        site_stds[i, j, c] = np.sqrt(np.nansum(site_slice ** 2)) / (np.count_nonzero(np.isfinite(site_slice)))
+                        # site_stds[i, j, c] = np.sqrt(np.nansum(site_slice ** 2)) / (np.count_nonzero(np.isfinite(site_slice)))
+                        site_stds[i, j, c] = np.nanmean(site_slice)
 
         return site_means, site_stds
 
@@ -578,16 +579,16 @@ def HDR_zone_analysis(imageSet_1: Optional[ImageSet] = None,
 
     if cross_analysis:
         if not only_cross_analysis:
-            np.savetxt(OUTPUT_DIRECTORY.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")}Site_ratio_diff.txt'), site_ratio_diff)
-            np.savetxt(OUTPUT_DIRECTORY.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")} Site_ratio_diff_std.txt'), site_ratio_std)
-        np.savetxt(OUTPUT_DIRECTORY.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")} Cross_site_ratios.txt'), cross_site_ratios)
-        np.savetxt(OUTPUT_DIRECTORY.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")} Cross_site_ratios_std.txt'), cross_site_stds)
+            np.savetxt(imageSet_1.path.parent.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")}Site_ratio_diff.txt'), site_ratio_diff)
+            np.savetxt(imageSet_1.path.parent.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")} Site_ratio_diff_std.txt'), site_ratio_std)
+        np.savetxt(imageSet_1.path.parent.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")} Cross_site_ratios.txt'), cross_site_ratios)
+        np.savetxt(imageSet_1.path.parent.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")} Cross_site_ratios_std.txt'), cross_site_stds)
     else:
-        np.savetxt(OUTPUT_DIRECTORY.joinpath(f'Site_1_ratios.txt'), site_1_ratios)
-        np.savetxt(OUTPUT_DIRECTORY.joinpath(f'Site_1_ratio_stds.txt'), site_1_ratio_stds)
+        np.savetxt(imageSet_1.path.parent.joinpath(f'Site_1_ratios.txt'), site_1_ratios)
+        np.savetxt(imageSet_1.path.parent.joinpath(f'Site_1_ratio_stds.txt'), site_1_ratio_stds)
 
     if not only_cross_analysis:
-        np.savetxt(OUTPUT_DIRECTORY.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")} Site_indices.txt'), indices, fmt='%i')
+        np.savetxt(imageSet_1.path.parent.joinpath(f'{imageSet_1.path.name.replace(".tif", " ")} Site_indices.txt'), indices, fmt='%i')
 
     return
 
@@ -622,15 +623,21 @@ def channel_histograms(image_path: Optional[Path] = None,
         else:
             color = 'Red'
 
-        data_points = np.shape(data[:, c])[0]
-        bin_width = 2 * iqr(data[:, c]) / (data_points ** (1 / 3))
-        min_x = np.min(data[:, c])
-        max_x = np.max(data[:, c])
+        data_c = data[:, c]
+        error_c = error[:, c]
+        finite_indices = np.isfinite(error_c)
+        data_finite = data_c[finite_indices]
+        error_finite = error_c[finite_indices]
+
+        data_points = np.shape(data_finite)[0]
+        bin_width = 2 * iqr(data_finite) / (data_points ** (1 / 3))
+        min_x = np.min(data_finite)
+        max_x = np.max(data_finite)
         number_of_bins = int(np.ceil((max_x - min_x) / bin_width))
 
         x_range_hist = np.linspace(min_x, max_x, number_of_bins)
-        histogram_w, bin_edges_w = np.histogram(data[:, c], bins=x_range_hist, weights=error[:, c])
-        histogram, bin_edges = np.histogram(data[:, c], bins=x_range_hist)
+        histogram_w, bin_edges_w = np.histogram(data_finite, bins=x_range_hist, weights=error_finite)
+        histogram, bin_edges = np.histogram(data_finite, bins=x_range_hist)
         histogram_w = histogram_w / np.sum(histogram_w)
         histogram = histogram / np.sum(histogram)
         width_w = abs(bin_edges_w[0] - bin_edges_w[1])
@@ -638,11 +645,13 @@ def channel_histograms(image_path: Optional[Path] = None,
         ax.bar(bin_edges[:-1], histogram, width=width, fc='0', alpha=0.5, label='Unweighted')
         ax.bar(bin_edges_w[:-1], histogram_w, width=width_w, fc=color, alpha=0.5, label='Weighted')
 
-        mean_w, std_w = weighted_avg_and_std(data[:, c], error[:, c])
-        mean_std_w = std_w / np.sqrt(data_points)
-        mean = np.mean(data[:, c])
-        std = np.std(data[:, c])
-        mean_std = std / np.sqrt(data_points)
+        mean_w, std_w = weighted_avg_and_std(data_finite, error_finite)
+        # mean_std_w = std_w / np.sqrt(data_points)
+        mean_std_w = np.mean(error_finite)
+        mean = np.mean(data_finite)
+        std = np.std(data_finite)
+        # mean_std = std / np.sqrt(data_points)
+        mean_std = mean_std_w
 
         stats[c, 0] = mean
         stats[c, 1] = mean_std
@@ -652,7 +661,7 @@ def channel_histograms(image_path: Optional[Path] = None,
         stats[c, 5] = std_w
 
         ax.set_title(f'{color}: Mean = {mean_w: .4f} $\\pm$ {mean_std_w: .4f}, STD = {std_w: .4f}', fontsize=14)
-        ax.legend(loc='upper right')
+        ax.legend(loc='best')
 
     stats = np.round(stats, 5)
 
@@ -662,7 +671,7 @@ def channel_histograms(image_path: Optional[Path] = None,
     col_headers_mid = np.array(
         ['Channel', 'Mean', 'SD of mean', 'SD', 'Mean', 'SD of mean', 'SD'])
     table_array = np.vstack([col_headers_top, col_headers_mid, stats])
-    np.savetxt(OUTPUT_DIRECTORY.joinpath(image_path.name.replace('.tif', ' stats.csv')), table_array, delimiter=',', fmt='%.15s')
+    np.savetxt(image_path.parent.joinpath(image_path.name.replace('.tif', ' stats.csv')), table_array, delimiter=',', fmt='%.15s')
 
     if title_x is not None:
         axes[1].set(xlabel=title_x)
@@ -670,7 +679,7 @@ def channel_histograms(image_path: Optional[Path] = None,
     if title_y is not None:
         axes[0].set(ylabel=title_y)
         axes[0].yaxis.label.set_size(16)
-    plt.savefig(OUTPUT_DIRECTORY.joinpath(image_path.name.replace('.tif', '.png')), dpi=300)
+    plt.savefig(image_path.parent.joinpath(image_path.name.replace('.tif', '.png')), dpi=300)
     plt.clf()
 
     return
@@ -709,6 +718,7 @@ def kernel_density_estimation(data_path: Optional[Path] = None,
         number_of_bins = int(np.ceil((max_x - min_x) / bin_width))
 
         x_range = np.linspace(np.min(data[:, c]), np.max(data[:, c]), 1000)
+        x_range_err = np.linspace(np.min(error[:, c]), np.max(error[:, c]), num=1000)
         x_range_hist = np.linspace(min_x, max_x, number_of_bins)
         histogram_w, bin_edges_w = np.histogram(data[:, c], bins=x_range_hist, weights=error[:, c])
         histogram, bin_edges = np.histogram(data[:, c], bins=x_range_hist)
@@ -719,17 +729,22 @@ def kernel_density_estimation(data_path: Optional[Path] = None,
         ax.bar(bin_edges[:-1], histogram, width=width, fc='0', alpha=0.5, label='Unweighted')
         ax.bar(bin_edges_w[:-1], histogram_w, width=width_w, fc=color, ec=edge_color, alpha=0.5, label='Weighted')
 
-        gkde = gaussian_kde(data[:, c], 0.3, weights=error[:, c])
+        gkde = gaussian_kde(data[:, c], 'silverman', weights=error[:, c])
+        gkde_error = gaussian_kde(error[:, c], 'silverman')
         result = gkde.evaluate(x_range_hist)
         result = result / np.sum(result)
+        result_error = gkde_error.evaluate(x_range_err)
+        result_error = result_error / np.sum(result_error)
 
         mean_w, std_w = weighted_avg_and_std(data[:, c], error[:, c])
-        mean_std_w = std_w / np.sqrt(data_points)
+        # mean_std_w = std_w / np.sqrt(data_points)
+        mean_std_w = np.mean(error[:, c])
         mean = np.mean(data[:, c])
         std = np.std(data[:, c])
-        mean_std = std / np.sqrt(data_points)
+        # mean_std = std / np.sqrt(data_points)
+        mean_std = mean_std_w
         mean_gke, std_gke = weighted_avg_and_std(x_range_hist, result)
-        mean_std_gke = std_gke / np.sqrt(1000)
+        mean_std_gke, _ = weighted_avg_and_std(x_range_err, result_error)
 
         stats[c, 0] = mean
         stats[c, 1] = mean_std
@@ -744,7 +759,7 @@ def kernel_density_estimation(data_path: Optional[Path] = None,
         ax.set_title(f'{color}: Mean = {mean_w: .4f} $\\pm$ {mean_std_w: .4f}, STD = {std_w: .4f}', fontsize=14)
 
         ax.plot(x_range_hist, result, c='0', label='KDE')
-        ax.legend(loc='upper right')
+        ax.legend(loc='best')
 
     stats = np.round(stats, 5)
 
@@ -753,7 +768,7 @@ def kernel_density_estimation(data_path: Optional[Path] = None,
     col_headers_top = np.array(['', 'Unweighted', '', '', 'Weighted', '', '', 'KDE', '', ''])
     col_headers_mid = np.array(['Channel', 'Mean', 'SD of mean', 'SD', 'Mean', 'SD of mean', 'SD', 'Mean', 'SD of mean', 'SD'])
     table_array = np.vstack([col_headers_top, col_headers_mid, stats])
-    np.savetxt(OUTPUT_DIRECTORY.joinpath(data_path.name.replace('.txt', ' stats.csv')), table_array, delimiter=',', fmt='%.15s')
+    np.savetxt(data_path.parent.joinpath(data_path.name.replace('.txt', ' stats.csv')), table_array, delimiter=',', fmt='%.15s')
     '''
     table = axes[1].table(table_array)
     fig.canvas.draw()
@@ -770,7 +785,7 @@ def kernel_density_estimation(data_path: Optional[Path] = None,
     if title_y is not None:
         axes[0].set(ylabel=title_y)
         axes[0].yaxis.label.set_size(16)
-    plt.savefig(OUTPUT_DIRECTORY.joinpath(data_path.name.replace('.txt', '.png')), dpi=300)
+    plt.savefig(data_path.parent.joinpath(data_path.name.replace('.txt', '.png')), dpi=300)
     plt.clf()
 
     return
@@ -791,6 +806,26 @@ def weighted_avg_and_std(values, weights):
     return average, math.sqrt(variance)
 
 
+def image_log(image_path: Optional[Path] = None, bit32: Optional[bool] = True):
+
+    if image_path is None:
+        image_path = gf.get_filepath_dialog('Choose image file')
+
+    imageSet = ImageSet(image_path)
+    imageSet.load_acq(bit32=bit32)
+    imageSet.load_std(bit32=bit32)
+
+    where = imageSet.acq != 0
+
+    temp = np.log10(imageSet.acq, out=np.full_like(imageSet.acq, np.nan), where=where)
+    imageSet.std = np.divide(imageSet.std, imageSet.acq * (np.log(5) + np.log(2)), out=np.full_like(imageSet.acq, np.nan), where=where)
+    imageSet.acq = temp
+
+    imageSet.save_32bit()
+
+    return
+
+
 if __name__ == "__main__":
 
     # linearity_distribution(lower=5, upper=250, use_std=False,
@@ -799,8 +834,9 @@ if __name__ == "__main__":
 
     # HDR_zone_analysis(number_of_zones_per_side=30)
     # HDR_zone_analysis(number_of_zones_per_side=100, only_cross_analysis=True)
-    # kernel_density_estimation(title_y='Normalized frequency', title_x='Ratio of cross-image zone mean pixel values',
-    #                           edge_color=None)
-    channel_histograms(title_y='Normalized frequency', title_x='Relative radiance')
+    kernel_density_estimation(title_y='Normalized frequency', title_x='Ratio of cross-image zone mean pixel values',
+                              edge_color=None)
+    # channel_histograms(title_y='Normalized frequency', title_x='Relative radiance')
+    # image_log()
 
     print('Run script from actual main file!')

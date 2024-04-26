@@ -158,7 +158,7 @@ class ImageSet(object):
             std_file_suffix = ' HDR STD.tif'
         else:
             acq_file_suffix = '.tif'
-            std_file_suffix = 'STD.tif'
+            std_file_suffix = ' STD.tif'
 
         if not separate_channels:
 

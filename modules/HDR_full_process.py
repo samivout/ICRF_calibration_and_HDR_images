@@ -124,7 +124,7 @@ def flat_field_correction(imageSet: ImageSet, flatSet: ImageSet):
 
     # Flat field correction
     imageSet.acq = imageSet.acq / flatSet.acq
-    imageSet.acq = multiply_per_channel([b, g, r], acq)
+    imageSet.acq = multiply_per_channel([b, g, r], imageSet.acq)
 
     return imageSet
 
@@ -217,6 +217,8 @@ def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
                        STD_data: Optional[np.ndarray] = None,
                        gaussian_blur: Optional[bool] = False):
 
+    white_point_correction_multipliers = [0.93017, 0.95174, 1.14395]
+
     if ICRF is None:
         ICRF = rd.read_data_from_txt(ICRF_CALIBRATED_FILE)
     if STD_data is None:
@@ -239,32 +241,31 @@ def process_HDR_images(image_path: Optional[Path] = DEFAULT_ACQ_PATH,
     del acq_list
 
     dark_list = gf.create_imageSets(DARK_PATH)
-    HDR_imageSets = []
+    flat_list = gf.create_imageSets(FLAT_PATH)
 
     for sublist in acq_sublists:
 
         sum_of_weights, square_sum_of_weights = precalculate_sum_of_weights(sublist)
         HDR_imageSet = calculate_HDR_image(sublist, dark_list, sum_of_weights, square_sum_of_weights,
                                            ICRF, ICRF_diff)
-        HDR_imageSets.append(HDR_imageSet)
-
-    flat_list = gf.create_imageSets(FLAT_PATH)
-
-    for i, HDR_set in enumerate(HDR_imageSets):
 
         try:
             flatSet = next(flatSet for flatSet in flat_list if
-                           HDR_set.mag == flatSet.mag and HDR_set.ill == flatSet.ill)
+                           HDR_imageSet.mag == flatSet.mag and HDR_imageSet.ill == flatSet.ill)
             flatSet.load_acq()
             flatSet.load_std()
-            HDR_imageSets[i] = flat_field_correction(HDR_set, flatSet)
+            HDR_imageSet = flat_field_correction(HDR_imageSet, flatSet)
 
         except StopIteration:
             continue
 
-    for HDR_set in HDR_imageSets:
+        for c in range(CHANNELS):
 
-        HDR_set.save_32bit(OUT_PATH.joinpath(HDR_set.path.name), is_HDR=True, separate_channels=False)
+            HDR_imageSet.acq[:, :, c] = HDR_imageSet.acq[:, :, c] * white_point_correction_multipliers[c]
+            HDR_imageSet.std[:, :, c] = HDR_imageSet.std[:, :, c] * white_point_correction_multipliers[c]
+
+        HDR_imageSet.save_32bit(OUT_PATH.joinpath(HDR_imageSet.path.name), is_HDR=True, separate_channels=False)
+        print(f'Saved {HDR_imageSet.path}')
 
     return
 
